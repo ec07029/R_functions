@@ -1,6 +1,6 @@
 ---
 title: "obtain most edited site for each gene target"
-author: "Karen Chu"
+author: "K Chu"
 date: "8/6/2020"
 output: html_document
 ---
