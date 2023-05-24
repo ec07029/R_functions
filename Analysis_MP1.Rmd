@@ -1,6 +1,6 @@
 ---
 title: "Nanopore"
-author: "Karen Chu"
+author: "K Chu"
 date: "11/5/2020"
 output: html_document
 ---
