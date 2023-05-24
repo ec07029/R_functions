@@ -1,6 +1,6 @@
 ---
 title: "Number of SNPs in VCF"
-author: "Karen Chu"
+author: "K Chu"
 date: "11/25/2020"
 output: html_document
 ---
