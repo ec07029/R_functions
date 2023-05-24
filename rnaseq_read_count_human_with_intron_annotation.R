@@ -1,3 +1,5 @@
+# author: K Chu
+
 library(VariantAnnotation)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(org.Hs.eg.db)
