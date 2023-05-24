@@ -1,5 +1,6 @@
 ---
 title: "HOMER"
+author: "K Chu"
 output: html_document
 ---
 
