@@ -1,3 +1,5 @@
+# author: "K Chu"
+
 # Obtain CDS and 3'UTR sequence
 
 
