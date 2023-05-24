@@ -1,3 +1,5 @@
+# author: K Chu
+
 # Heatmap: Edit frequency and Gene Expression of HyperTRIBE gene targets
 
 # setwd("/data/leslie/chuk/Z138_MSI2_Chiara/Analysis_trimmed_reads_test_auto-script/DESeq2/")
