@@ -1,3 +1,5 @@
+# author: K Chu
+
 # Get gene symbol from genomic coordinates
 
 # Create grange object
