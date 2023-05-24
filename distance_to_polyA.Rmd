@@ -1,6 +1,6 @@
 ---
 title: "Coordinates for sc-HyperTRIBE"
-author: "Karen Chu"
+author: "K Chu"
 date: "2/21/2020"
 output: html_document
 ---
