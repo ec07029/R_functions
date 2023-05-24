@@ -1,4 +1,5 @@
 # Volcano plots: HyperTRIBE targets colored
+# author: K Chu
 
 # setwd("/data/leslie/chuk/Z138_MSI2_Chiara/Analysis_trimmed_reads_test_auto-script/DESeq2/")
 
