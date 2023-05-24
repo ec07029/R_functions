@@ -1,3 +1,5 @@
+# author: K Chu
+
 library(DESeq2)
 library(data.table)
 library(TxDb.Mmusculus.UCSC.mm10.knownGene)
