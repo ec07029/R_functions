@@ -1,6 +1,6 @@
 ---
 title: 'Syncrip: Distance of HyperTRIBE edited sites to nearest HOMER motif'
-author: "Karen Chu"
+author: "K Chu"
 date: "3/5/2019"
 output: html_document
 ---
