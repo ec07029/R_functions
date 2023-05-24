@@ -1,3 +1,5 @@
+# author: K Chu
+
 # write fasta file using dataframe that has column names "ensembl_gene_id" and "3utr".
 writeFasta<-function(data, filename){
   fastaLines = c()
