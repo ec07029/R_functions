@@ -1,3 +1,5 @@
+# author: K Chu
+
 library("GenomicFeatures")
 
 gff = makeTxDbFromGFF("/data/leslie/chuk/index_Karen/gencode.v19.annotation/gencode.v19.annotation.gtf")
