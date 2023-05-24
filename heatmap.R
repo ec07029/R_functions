@@ -1,3 +1,5 @@
+# author: K Chu
+
 # Heatmap with color scale control
 
 library(pheatmap)
