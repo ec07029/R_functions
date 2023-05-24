@@ -1,6 +1,6 @@
 ---
 title: "clusterProfiler specific functions"
-author: "Karen Chu"
+author: "K Chu"
 date: "11/21/2019"
 output: html_document
 ---
