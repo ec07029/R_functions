@@ -1,6 +1,6 @@
 ---
 title: "Read in VCF files"
-author: "Karen Chu"
+author: "K Chu"
 date: "1/22/2020"
 output: html_document
 ---
