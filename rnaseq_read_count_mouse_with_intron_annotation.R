@@ -1,3 +1,5 @@
+# author: K Chu
+
 library(VariantAnnotation)
 library(TxDb.Mmusculus.UCSC.mm10.knownGene)
 library(org.Mm.eg.db)
