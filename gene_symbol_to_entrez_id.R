@@ -1,3 +1,5 @@
+# author: K Chu
+
 # cannot work if dplyr is loaded
 library(org.Hs.eg.db)
 hs <- org.Hs.eg.db
