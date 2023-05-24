@@ -1,3 +1,5 @@
+# author: K Chu
+
 inputFile <- "/Users/karen/Downloads/hy395-selex_embed-aee607680965/data/train_seqs.fasta"
 labelFile <- "/Users/karen/Downloads/hy395-selex_embed-aee607680965/data/train_labels.txt"
 
