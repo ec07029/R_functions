@@ -1,3 +1,5 @@
+# author: K Chu
+
 # create bed file from csv
 
 setwd("~/mount/chuk/sc-HyperTRIBE/from_Nathan/10X_genomics_Minimap_aligner/Analysis/")
