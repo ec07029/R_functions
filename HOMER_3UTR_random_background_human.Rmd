@@ -1,0 +1,184 @@
+---
+title: "HOMER"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries}
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+library(BSgenome.Hsapiens.UCSC.hg19)
+library(org.Hs.eg.db)
+library(GenomicRanges)
+library(GenomicFeatures)
+library(RMariaDB)
+library(Biostrings)
+library(dplyr)
+library(openxlsx)
+```
+
+Set working directory.
+
+```{r setwd}
+folder <- "~/mount/chuk/MOLM13/MOLM13_Yuheng_samples_re-run_with_20191114_pipeline/HOMER/"
+save.folder <- "~/mount/chuk/MOLM13/MOLM13_Yuheng_samples_re-run_with_20191114_pipeline/HOMER/"
+```
+
+Import data.
+
+```{r import}
+df <- read.xlsx("~/mount/chuk/data_resources/molm13_snp_counts_dedupped_significant.xlsx")
+
+fpkm.index <- which( grepl("fpkm", colnames(df)) )
+
+df.filter <- df [ df$p.adj < 0.05 &
+                    df$diff.frequency >= 0.1 &
+                    df[,fpkm.index[1]] >= 5 &
+                    df[,fpkm.index[2]] >= 5 &
+                    df[,fpkm.index[3]] >= 5, ]
+```
+
+Get human genome.
+
+```{r human genome}
+# Get genome
+txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene # annotation database of mouse genome
+exons.by.transcript.id <- GenomicFeatures::exonsBy(txdb, by=("tx"), use.names = TRUE) # Group exons by transcript ID
+genome <- BSgenome.Hsapiens.UCSC.hg19 # genome
+```
+
+Convert to grange.
+
+```{r pressure, echo=FALSE}
+# Prepare significant edit sites
+df.sig <- df.filter
+df.sig$grange.start <- df.sig$start - 100
+df.sig$grange.end <- df.sig$start + 100
+hypertribe.cluster.df <- df.sig %>% select(c("seqnames", "grange.start", "grange.end", "strand", "gene.symbol"))
+
+# Convert dataframe to GenomicRanges object
+hypertribe.cluster.gr <- makeGRangesFromDataFrame(hypertribe.cluster.df,
+                         keep.extra.columns=TRUE,
+                         seqnames.field=c("seqnames"),
+                         start.field="grange.start",
+                         end.field=c("grange.end"),
+                         strand.field="strand" )
+```
+
+Get 3'UTR random sequences. If 3'UTR too short to fit within +/-100bp window, it will result as an NA and be removed.
+
+```{r utr}
+utr3 <- threeUTRsByTranscript(txdb) # Get 3'UTR genomic coordinates
+utr.df <- as.data.frame(utr3)
+
+# Obtain random start position. Remove NA induced by super short 3'UTR.
+background.start.pos <- runif(nrow(utr.df), utr.df$start, utr.df$end-200)
+background.chr <- rep(utr.df$seqnames, 1)
+background.strand <- rep(utr.df$strand, 1)
+background.start.pos.na.index <- which(is.na(background.start.pos))
+
+background.start.final <- background.start.pos[ -background.start.pos.na.index ]
+background.chr.final <- background.chr[ -background.start.pos.na.index ]
+background.strand.final <- background.strand [ -background.start.pos.na.index ]
+background.end.final <- background.start.final + 200
+
+background.df <- data.frame( seqnames=background.chr.final,
+                             start=background.start.final,
+                             end=background.end.final,
+                             strand=background.strand.final )
+
+chr.random.index <- which(grepl("random|Un", background.df$seqnames))
+background.df.final <- background.df[ -chr.random.index, ]
+background.df.final.dedup <- background.df.final[!(duplicated(background.df.final)),]
+
+# Convert dataframe to GenomicRanges object
+background.gr <- makeGRangesFromDataFrame(background.df.final.dedup,
+                         keep.extra.columns=TRUE,
+                         seqnames.field=c("seqnames"),
+                         start.field="start",
+                         end.field=c("end"),
+                         strand.field="strand" )
+
+# Remove overlaps with hypertribe window
+overlap <- findOverlaps(background.gr, hypertribe.cluster.gr)
+overlap.index <- unique(queryHits(overlap))
+background.gr.final <- background.gr[-overlap.index,]
+
+background.gr.df <- as.data.frame(background.gr.final)
+
+# Sample background.gr.df to make background sample size smaller
+# nrow(hypertribe.cluster.df) + 500 is just the number of rows you want in your background
+background.gr.df <- background.gr.df[sample(nrow(background.gr.df), 
+                                            nrow(hypertribe.cluster.df) + 500), ]
+
+background.gr.final <- makeGRangesFromDataFrame(background.gr.df,
+                         keep.extra.columns=TRUE,
+                         seqnames.field=c("seqnames"),
+                         start.field="start",
+                         end.field=c("end"),
+                         strand.field="strand" )
+```
+
+
+Get sequence for hypertribe.
+
+```{r get seq}
+# Get sequence based on grange coordinates
+prepare.homer.input <- function(cluster.gr, cluster.df) {
+  
+  hypertribe.cluster.sequence <- Biostrings::getSeq(genome, cluster.gr)
+  hypertribe.cluster.sequence.df <- as.data.frame(hypertribe.cluster.sequence)
+  rownames(hypertribe.cluster.sequence.df) <- paste(cluster.df$gene.symbol, 
+                                                    cluster.df[,1],
+                                                    cluster.df[,2],
+                                                    cluster.df[,3],
+                                                    rownames(hypertribe.cluster.sequence.df),
+                                                    sep=".")
+  colnames(hypertribe.cluster.sequence.df) <- "sequence"
+  
+  return(hypertribe.cluster.sequence.df)
+  
+}
+
+hypertribe.cluster.sequence <- prepare.homer.input(hypertribe.cluster.gr, hypertribe.cluster.df)
+
+hypertribe.cluster.sequence.background <- prepare.homer.input(background.gr.final, background.gr.df)
+```
+
+Write fasta.
+
+```{r fasta}
+setwd(save.folder)
+
+# write fasta file using dataframe that has column names "ensembl_gene_id" and "3utr".
+writeFasta<-function(data, filename){
+  
+  data <- as.data.frame(data)
+  
+  fastaLines = c()
+  for (rowNum in 1:nrow(data)){
+    fastaLines = c(fastaLines, as.character(paste(">", rownames(data)[rowNum], sep = "")))
+    fastaLines = c(fastaLines,as.character(data[rowNum,"sequence"]))
+  }
+  fileConn<-file(filename)
+  writeLines(fastaLines, fileConn)
+  close(fileConn)
+}
+
+# Write all sequences
+writeFasta(hypertribe.cluster.sequence,
+           paste0(save.folder, "Syncrip_HSC_plusminus_100bp_window.fa"))
+writeFasta(hypertribe.cluster.sequence.background,
+           paste0(save.folder, "Syncrip_HSC_3UTR_RANDOM_BACKGROUND.fa"))
+
+```
+
+
+
+
+
+
+

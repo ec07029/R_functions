@@ -1,0 +1,164 @@
+---
+title: "CDF plot"
+author: "Karen Chu"
+date: "2/5/2020"
+output: html_document
+---
+
+Plot log2FC of m6a sites vs log2FC of non-m6a sites.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries
+
+```{r lib}
+library(ggplot2)
+library(openxlsx)
+```
+
+Work dir.
+
+```{r work dir}
+data.dir <- "~/mount/chuk/YTHDC1/data/"
+figures.dir <- "~/mount/chuk/YTHDC1/CDF_plot_m6A_sites/figures/"
+```
+
+Import data
+
+```{r import}
+setwd(data.dir)
+
+methyl.sites <- read.xlsx("m6A_in_MOLM13_cells.xlsx")
+rna.seq <- read.csv("YTHDC1_KD_in_MOLM13_cells-RNA-seq.csv")
+```
+
+Get methyl sites.
+
+```{r all sites}
+all.methyl.sites <- unique( c( methyl.sites$`1.m6A.site`, 
+                               methyl.sites$`2-3.m6A.sites`,
+                               methyl.sites$`4-5.m6A.sites`,
+                               methyl.sites$`6-7.m6A.sites`,
+                               methyl.sites$`8-9.m6A.sites`,
+                               methyl.sites$`m6A.>.10.sites`) )
+
+all.methyl.sites <- all.methyl.sites [ !(is.na(all.methyl.sites)) ]
+
+one.methyl.site <- unique( methyl.sites[ !(is.na(methyl.sites$`1.m6A.site`)), ]$`1.m6A.site` )
+two.three.methyl.site <- unique( methyl.sites[ !(is.na(methyl.sites$`2-3.m6A.sites`)), ]$`2-3.m6A.sites` )
+four.five.methyl.site <- unique( methyl.sites[ !(is.na(methyl.sites$`4-5.m6A.sites`)), ]$`4-5.m6A.sites` )
+six.seven.methyl.site <- unique( methyl.sites[ !(is.na(methyl.sites$`6-7.m6A.sites`)), ]$`6-7.m6A.sites` )
+eight.nine.methyl.site <- unique( methyl.sites[ !(is.na(methyl.sites$`8-9.m6A.sites`)), ]$`8-9.m6A.sites` )
+ten.or.more.methyl.site <- unique( methyl.sites[ !(is.na(methyl.sites$`m6A.>.10.sites`)), ]$`m6A.>.10.sites` )
+
+#Check lengths match when concatenate - Checked and everything ok on 2/5/2020
+length(unique(all.methyl.sites))
+length(unique( methyl.sites[ !(is.na(methyl.sites$`1.m6A.site`)), ]$`1.m6A.site`))
+length(unique( methyl.sites[ !(is.na(methyl.sites$`2-3.m6A.sites`)), ]$`2-3.m6A.sites`))
+length(unique( methyl.sites[ !(is.na(methyl.sites$`4-5.m6A.sites`)), ]$`4-5.m6A.sites`))
+length(unique( methyl.sites[ !(is.na(methyl.sites$`6-7.m6A.sites`)), ]$`6-7.m6A.sites`))
+length(unique( methyl.sites[ !(is.na(methyl.sites$`8-9.m6A.sites`)), ]$`8-9.m6A.sites`))
+length(unique( methyl.sites[ !(is.na(methyl.sites$`m6A.>.10.sites`)), ]$`m6A.>.10.sites`))
+```
+
+Get log2FC.
+Sums up to 82 if you compare the lengths.
+
+```{r logfc}
+all.methyl.sites_log2fc <- rna.seq [ rna.seq$X %in% all.methyl.sites, ]$log2FoldChange
+one.methyl.site_log2fc <- rna.seq [ rna.seq$X %in% one.methyl.site, ]$log2FoldChange
+two.three.methyl.site_log2fc <- rna.seq [ rna.seq$X %in% two.three.methyl.site, ]$log2FoldChange
+four.five.methyl.site_log2fc <- rna.seq [ rna.seq$X %in% four.five.methyl.site, ]$log2FoldChange
+six.seven.methyl.site_log2fc <- rna.seq [ rna.seq$X %in% six.seven.methyl.site, ]$log2FoldChange
+eight.nine.methyl.site_log2fc <- rna.seq [ rna.seq$X %in% eight.nine.methyl.site, ]$log2FoldChange
+ten.or.more.methyl.site_log2fc <- rna.seq [ rna.seq$X %in% ten.or.more.methyl.site, ]$log2FoldChange
+
+length(all.methyl.sites_log2fc)
+length(one.methyl.site_log2fc)
+length(two.three.methyl.site_log2fc)
+length(four.five.methyl.site_log2fc)
+length(six.seven.methyl.site_log2fc)
+length(eight.nine.methyl.site_log2fc)
+length(ten.or.more.methyl.site_log2fc)
+```
+
+Plot cdf
+
+```{r cdf}
+setwd(figures.dir)
+
+# df1 = list of genes with methyl sites
+# df2 = rna-seq gene list
+plot.cdf <- function(methylated.genes, rna.seq.full.data, title) {
+  
+  # Get list of methylated and non-methylated genes
+  methyl.sites <- rna.seq.full.data [ rna.seq.full.data$X %in% methylated.genes, ]$log2FoldChange
+  non.methyl.sites <- rna.seq [ !(rna.seq.full.data$X %in% methylated.genes), ]$log2FoldChange
+  
+  # Convert to dataframe, class object required for ggplot
+  methyl.sites.input <- data.frame( log2FC = methyl.sites, status = "methylated")
+  non.methyl.sites.input <- data.frame( log2FC = non.methyl.sites, status = "not.methylated")
+  cdf.input <- rbind(methyl.sites.input, non.methyl.sites.input)
+  cdf.input <- cdf.input [ !(is.na(cdf.input$log2FC)), ]
+  
+  # K-S test
+  # alternative = greater when we hypothesize that the second distribution is greater than the first
+  ks.res <- ks.test( methyl.sites.input$log2FC, non.methyl.sites.input$log2FC, alternative = "greater")
+  
+  # Plot CDF
+  # png(paste0(title, ".png"), 1000, 800)
+  # p <- ggplot(cdf.input, aes(log2FC, colour = status, size=3)) + stat_ecdf() + 
+  #   ggtitle(paste0(title, "\np-value: ", signif(ks.res$p.value, digits = 3), "\n")) +
+  #   xlab("\nlog2FC(KO/WT)") +
+  #   ylab("CDF\n") +
+  #   theme_minimal() +
+  #   theme(panel.border = element_rect(colour = "black", fill=NA, size=2)) +
+  #   theme(plot.title = element_text(size=40)) +
+  #   theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black"))
+  # print(p)
+  # dev.off()
+  
+  # Plot boxplot
+  png(paste0(title, "_boxplot.png"), 500, 800)
+  p<-ggplot(cdf.input, aes(x=status, y=log2FC, fill=status)) +
+    geom_boxplot(lwd=1.5) +
+    ggtitle(paste0(title, "\n")) +
+    theme_classic() +
+    theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+    theme(panel.border = element_rect(colour = "black", fill=NA, size=2)) +
+    theme(plot.title = element_text(size=40)) +
+    theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black"))
+  print(p)
+  dev.off()
+
+}
+
+plot.cdf( all.methyl.sites, rna.seq, "all.methyl.sites" )
+plot.cdf( one.methyl.site, rna.seq, "one.methyl.site" )
+plot.cdf( two.three.methyl.site, rna.seq, "two.three.methyl.site" )
+plot.cdf( four.five.methyl.site, rna.seq, "four.five.methyl.site" )
+plot.cdf( six.seven.methyl.site, rna.seq, "six.seven.methyl.site" )
+plot.cdf( eight.nine.methyl.site, rna.seq, "eight.nine.methyl.site" )
+plot.cdf( ten.or.more.methyl.site, rna.seq, "ten.or.more.methyl.site" )
+```
+
+Boxplot.
+
+```{r boxplot}
+
+```
+
+
+
+
+
+
+
+
+
+
+

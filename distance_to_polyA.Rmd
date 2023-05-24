@@ -1,0 +1,342 @@
+---
+title: "Coordinates for sc-HyperTRIBE"
+author: "Karen Chu"
+date: "2/21/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries
+
+```{r lib}
+library(openxlsx)
+library(dplyr)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+```
+
+Work dir
+
+```{r work dir}
+folder <- "~/mount/chuk/sc-HyperTRIBE/data/"
+output.dir <- "~/mount/chuk/sc-HyperTRIBE/get_coordinates_for_gene_list/"
+```
+
+Import data
+
+```{r data}
+setwd(folder)
+
+gene.list.df <- read.xlsx("scHyperTRIBE_list.xlsx", sheet = 5)
+gene.list <- gene.list.df$gene.symbol
+```
+
+Import hypertribe data
+
+```{r hypertribe}
+# Import transplant hypertribe
+lt.transplant.hypertribe <- read.xlsx("~/mount/chuk/data_resources/mouse_hsc_snp_counts_dedupped_significant.xlsx", sheet=1)
+st.transplant.hypertribe <- read.xlsx("~/mount/chuk/data_resources/mouse_hsc_snp_counts_dedupped_significant.xlsx", sheet=2)
+mpp2.transplant.hypertribe <- read.xlsx("~/mount/chuk/data_resources/mouse_hsc_snp_counts_dedupped_significant.xlsx", sheet=3)
+mpp4.transplant.hypertribe <- read.xlsx("~/mount/chuk/data_resources/mouse_hsc_snp_counts_dedupped_significant.xlsx", sheet=4)
+
+# Import germline hypertribe
+lt.germline.hypertribe <- read.csv("~/mount/chuk/MSI2-ADAR_dox_blood_germline_mouse/Project_10423_B/Mouse_MSI2-dox_germline_LT_snp_counts_significance_fpkm.csv")
+st.germline.hypertribe <- read.csv("~/mount/chuk/MSI2-ADAR_dox_blood_germline_mouse/Project_10423_B/Mouse_MSI2-dox_germline_ST_snp_counts_significance_fpkm.csv")
+mpp2.germline.hypertribe <- read.csv("~/mount/chuk/MSI2-ADAR_dox_blood_germline_mouse/Project_10423_B/Mouse_MSI2-dox_germline_MPP2_snp_counts_significance_fpkm.csv")
+mpp4.germline.hypertribe <- read.csv("~/mount/chuk/MSI2-ADAR_dox_blood_germline_mouse/Project_10423_B/Mouse_MSI2-dox_germline_MPP4_snp_counts_significance_fpkm.csv")
+
+# LSC and LSK
+lsc <- read.xlsx("~/mount/chuk/data_resources/mouse_lsc_snp_counts_dedupped_significant.xlsx")
+lsk <- read.xlsx("~/mount/chuk/data_resources/mouse_lsk_snp_counts_dedupped_significant.xlsx")
+```
+
+Combine lt, st, mpp2, mpp4 lists
+
+```{r combine}
+# Obtain gene coordinates and signficance in transplant
+filter.columns <- function(df) {
+  
+  df.filter <- df [ df$p.adj < 0.1 & 
+                      df$diff.frequency >= 0.1 &
+                      df$ADA.fpkm >= 5 & 
+                      df$DCD.fpkm >= 5 & 
+                      df$MIG.fpkm >= 5, ]
+  
+  df.filter <- df.filter %>% dplyr::select(c("entrez.id", "chr", "pos", "strand", "gene.symbol",
+                               "diff.frequency", "annotation", "p.value", "p.adj"))
+  
+  
+  return(df.filter)
+  
+}
+
+lt.transplant.hypertribe.filter <- filter.columns(lt.transplant.hypertribe)
+st.transplant.hypertribe.filter <- filter.columns(st.transplant.hypertribe)
+mpp2.transplant.hypertribe.filter <- filter.columns(mpp2.transplant.hypertribe)
+mpp4.transplant.hypertribe.filter <- filter.columns(mpp4.transplant.hypertribe)
+
+lt.transplant.hypertribe.filter$cell <- "LT"
+st.transplant.hypertribe.filter$cell <- "ST"
+mpp2.transplant.hypertribe.filter$cell <- "MPP2"
+mpp4.transplant.hypertribe.filter$cell <- "MPP4"
+
+hsc.transplant.hypertribe <- rbind( lt.transplant.hypertribe.filter, st.transplant.hypertribe.filter,
+                                    mpp2.transplant.hypertribe.filter, mpp4.transplant.hypertribe.filter )
+
+# Repeat for germline
+filter.columns <- function(df) {
+  
+  df.filter <- df [ df$p.adj < 0.1 & 
+                      df$diff.frequency >= 0.1 &
+                      df$ADA.fpkm >= 5 & 
+                      df$WT.fpkm >= 5, ]
+  
+  df.filter <- df.filter %>% dplyr::select(c("entrez.id", "seqnames", "start", "strand", "gene.symbol",
+                               "diff.frequency", "annotation", "p.value", "p.adj"))
+  
+  
+  
+  return(df.filter)
+  
+}
+
+lt.germline.hypertribe.filter <- filter.columns(lt.germline.hypertribe)
+st.germline.hypertribe.filter <- filter.columns(st.germline.hypertribe)
+mpp2.germline.hypertribe.filter <- filter.columns(mpp2.germline.hypertribe)
+mpp4.germline.hypertribe.filter <- filter.columns(mpp4.germline.hypertribe)
+
+lt.germline.hypertribe.filter$cell <- "LT"
+st.germline.hypertribe.filter$cell <- "ST"
+mpp2.germline.hypertribe.filter$cell <- "MPP2"
+mpp4.germline.hypertribe.filter$cell <- "MPP4"
+
+hsc.germline.hypertribe <- rbind( lt.germline.hypertribe.filter, st.germline.hypertribe.filter,
+                                  mpp2.germline.hypertribe.filter, mpp4.germline.hypertribe.filter )
+
+colnames(hsc.germline.hypertribe) <- colnames(hsc.transplant.hypertribe)
+
+# Repeat for LSC
+filter.columns <- function(df) {
+  
+  df.filter <- df [ df$p.adj < 0.005 & 
+                      df$diff.frequency >= 0.1 &
+                      df$ADA.fpkm >= 5 & 
+                      df$DCD.fpkm >= 5 & 
+                      df$MIG.fpkm >= 5, ]
+  
+  df.filter <- df.filter %>% dplyr::select(c("entrez.id", "chr", "pos", "strand", "gene.symbol",
+                               "diff.frequency", "annotation", "p.value", "p.adj"))
+  
+  
+  return(df.filter)
+  
+}
+
+lsc.hypertribe.filter <- filter.columns(lsc)
+lsk.hypertribe.filter <- filter.columns(lsk)
+```
+
+Separate gene list by where the genes came from:
+
+Transplant (last gene is Slc17a5)
+Germline ( first gene is Hibch and last gene is Rnls)
+Known targets (from other publications) (first gene Smad3)
+
+```{r categorize}
+transplant.last.gene <- which(gene.list == "Slc17a5")
+transplant.genes <- gene.list[1:transplant.last.gene]
+
+germline.first.gene <- which(gene.list == "Hibch")
+germline.last.gene <- which(gene.list == "Rnls")
+germline.genes <- gene.list[germline.first.gene:germline.last.gene]
+
+known.first.gene <- which(gene.list == "Smad3")
+known.last.gene <- which(gene.list == "DYNLL1")
+known.genes <- gene.list[known.first.gene:known.last.gene]
+
+lsc.first.gene <- which(gene.list == "Actr2")
+lsc.last.gene <- which(gene.list == "Wdr3")
+lsc.genes <- gene.list[lsc.first.gene:lsc.last.gene]
+
+lsk.first.gene <- which(gene.list == "Actl6a")
+lsk.last.gene <- which(gene.list == "Uchl5")
+lsk.genes <- gene.list[lsk.first.gene:lsk.last.gene]
+```
+
+Combine LT, ST, MPP2, MPP4 edit sites together
+
+```{r transplant sig}
+# Obtain edit sites for transplant genes
+all.edit.sites_transplant.genes <- hsc.transplant.hypertribe[ hsc.transplant.hypertribe$gene.symbol %in% transplant.genes, ]
+
+# Obtain edit sites for germline genes
+all.edit.sites_germline.genes <- hsc.germline.hypertribe[ hsc.germline.hypertribe$gene.symbol %in% germline.genes, ]
+
+# Obtain edit sites for known genes from transplant and germline data
+all.edit.sites.in.transplant_known.genes <- hsc.transplant.hypertribe[ hsc.transplant.hypertribe$gene.symbol %in% known.genes, ]
+all.edit.sites.in.germline_known.genes <- hsc.germline.hypertribe[ hsc.germline.hypertribe$gene.symbol %in% known.genes, ]
+all.edit.sites_known.genes <- rbind(all.edit.sites.in.transplant_known.genes,
+                                    all.edit.sites.in.germline_known.genes)
+
+# Obtain edit sites for LSC
+all.edit.sites.in.lsc <- lsc.hypertribe.filter [ lsc.hypertribe.filter$gene.symbol %in% lsc.genes, ]
+all.edit.sites.in.lsk <- lsk.hypertribe.filter [ lsk.hypertribe.filter$gene.symbol %in% lsk.genes, ]
+```
+
+Obtain coordinates of all genes
+
+```{r exon coords}
+# Create grange object of edit sites
+make.grange.object <- function(df) {
+  
+  df.grange <- makeGRangesFromDataFrame(df,
+                         keep.extra.columns=TRUE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field=c("seqnames", "seqname",
+                                          "chromosome", "chrom",
+                                          "chr", "chromosome_name",
+                                          "seqid"),
+                         start.field=c("start", "pos"),
+                         end.field=c("pos", "end", "stop"),
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+  
+  return(df.grange)
+  
+}
+
+all.edit.sites_transplant.genes.grange <- make.grange.object(all.edit.sites_transplant.genes)
+all.edit.sites_germline.genes.grange <- make.grange.object(all.edit.sites_germline.genes)
+all.edit.sites_known.genes.grange <- make.grange.object(all.edit.sites_known.genes)
+
+all.edit.sites.in.lsc.grange <- make.grange.object(all.edit.sites.in.lsc)
+all.edit.sites.in.lsk.grange <- make.grange.object(all.edit.sites.in.lsk)
+
+# Get genomic coord of all genes
+txdb.genes = genes(TxDb.Mmusculus.UCSC.mm10.knownGene) # used to get gene coordinates
+txdb <- TxDb.Mmusculus.UCSC.mm10.knownGene # used to get transcripts of specific gene
+```
+
+Calculate distance to poly A.
+
+
+```{r final}
+#setwd(output.dir)
+
+# Functions for loop
+obtain.exon.coordinates <- function(gene.coords) {
+  
+  # Get genomic exon coordinates of transcripts
+  transcripts <- transcriptsBy(txdb, by="gene")
+  gene.transcripts.index <- subjectHits( findOverlaps(gene.coords, transcripts) )
+  gene.transcripts.final <- transcripts[gene.transcripts.index]
+  gene.transcripts.final.df <- as.data.frame(gene.transcripts.final)
+  tx_names <- gene.transcripts.final.df$tx_name
+  exons <- exonsBy(txdb, "tx", use.names=TRUE)[tx_names]
+  
+  return(exons)
+  
+}
+
+obtain.distance.to.poly.A <- function(df.input, grange.input) {
+  
+  df.input$distance.to.poly.A <- NA
+  df.input$minimum.distance.to.poly.A <- NA
+  
+    # Loop through every edit site in dataframe
+    for (i in 1:nrow(df.input)) {
+
+      print(i)
+      # Get genomic exon coordinates of transcripts
+      gene.coords <- subset(txdb.genes, gene_id==df.input$entrez.id[i]) 
+      exons <- obtain.exon.coordinates(gene.coords)
+      
+      # Obtain distance to end of 3'UTR (equivalent to start of poly A)
+      distance.to.poly.A.vector <- vector()
+      
+      # Loop through all isoforms
+      for (j in 1:length(exons)) {
+        
+        # Obtain exon with edit site
+        edit.site.exon.index <- subjectHits(findOverlaps(grange.input[i,], exons[[j]]))
+        
+        # If edit site not in any exon of isoform, proceed to next isoform
+        if( length(edit.site.exon.index) == 0 ) {
+          
+          next
+          
+        }
+        
+        # If gene is on + strand, calculate to end of 3'UTR using "end" coordinate
+        if ( df.input[i,]$strand == "+" ) {
+          
+           exon.subset <- exons[[j]]
+           exon.subset.df <- as.data.frame(exon.subset)
+           distance.to.poly.A <- end(exons[[j]][edit.site.exon.index]) - start(grange.input[i,])
+           
+           # If edit site is not in last exon, sum distance to end of exon + width of all subsequent exons 
+           if ( nrow(exon.subset.df) != edit.site.exon.index ) {
+             
+             distance.to.poly.A <- distance.to.poly.A +
+               sum(exon.subset.df[(edit.site.exon.index+1):nrow(exon.subset.df),]$width)
+             
+           } else { }
+           
+           distance.to.poly.A.vector <- c( distance.to.poly.A.vector, distance.to.poly.A )
+          
+        }
+        
+        # If gene is on - strand, calculate to end of 3'UTR uinsg "start" coordinate because it goes opposite direction
+        if ( df.input[i,]$strand == "-" ) {
+          
+          exon.subset <- exons[[j]]
+          exon.subset.df <- as.data.frame(exon.subset)
+          distance.to.poly.A <- start(grange.input[i,]) - start(exons[[j]][edit.site.exon.index])
+
+          # If edit site is not in last exon, sum distance to end of exon + width of all preceeding exons
+          if ( nrow(exon.subset.df) != edit.site.exon.index ) {
+             
+            distance.to.poly.A <- distance.to.poly.A + 
+              sum(exon.subset.df[(edit.site.exon.index+1):nrow(exon.subset.df),]$width)
+             
+          } else { }
+           
+            distance.to.poly.A.vector <- c( distance.to.poly.A.vector, distance.to.poly.A )
+          
+        }
+        
+      }
+      
+      # Store all distance values
+      df.input$distance.to.poly.A[i] <- paste(as.character(distance.to.poly.A.vector), collapse="; ")
+        
+      # Store minimum distance value
+      df.input$minimum.distance.to.poly.A[i] <- min(distance.to.poly.A.vector)
+  
+    }
+  
+  return(df.input)
+  
+}
+
+all.edit.sites_transplant.genes.with.distance <- obtain.distance.to.poly.A(all.edit.sites_transplant.genes, all.edit.sites_transplant.genes.grange)
+write.csv(all.edit.sites_transplant.genes.with.distance, "all.edit.sites_transplant.genes.with.distance.csv", row.names = FALSE)
+ 
+all.edit.sites_germline.genes.with.distance <- obtain.distance.to.poly.A(all.edit.sites_germline.genes, all.edit.sites_germline.genes.grange)
+write.csv(all.edit.sites_germline.genes.with.distance, "all.edit.sites_germline.genes.with.distance.csv", row.names = FALSE)
+
+all.edit.sites.in.lsc.with.distance <- obtain.distance.to.poly.A(all.edit.sites.in.lsc, all.edit.sites.in.lsc.grange)
+write.csv(all.edit.sites.in.lsc.with.distance, "all.edit.sites.in.lsc.with.distance.csv", row.names = FALSE)
+
+all.edit.sites.in.lsk.with.distance <- obtain.distance.to.poly.A(all.edit.sites.in.lsk, all.edit.sites.in.lsk.grange)
+write.csv(all.edit.sites.in.lsk.with.distance, "all.edit.sites.in.lsk.with.distance.csv", row.names = FALSE)
+
+```
+
+
+
+

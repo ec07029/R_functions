@@ -1,0 +1,60 @@
+---
+title: "Read in VCF files"
+author: "Karen Chu"
+date: "1/22/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Work dir.
+
+```{r work dir}
+work.dir <- "~/mount/chuk/MSI2-ADAR_dox_blood_germline_mouse/Project_10423_B/"
+```
+
+Read in vcf files.
+
+```{r load vcf}
+setwd(work.dir)
+
+vcf.files <- Sys.glob("*FinalR.vcf")
+
+dataFiles <- lapply(Sys.glob("*FinalR.vcf"), read.table, stringsAsFactors = FALSE)
+
+# Name columns
+names(dataFiles) <- vcf.files
+```
+
+
+Get list of dbsnp.
+Result from below chunk: Yuheng's SNP file contains no dbsnps.
+
+```{r dbsnp}
+setwd(work.dir)
+
+# Unlist list into dataframe whose names are the names of the list.
+output <- data.frame( sample = NA, num.of.snps = NA)
+
+for (i in 1:length(vcf.files)) {
+  
+  df <- dataFiles[[i]]
+  not.dbsnp <- df [ df$V3 == ".", ]
+  assign(vcf.files[i], not.dbsnp)
+  
+  output.temp <- data.frame( sample = vcf.files[i], num.of.snps = nrow(not.dbsnp) )
+  
+  output <- rbind(output, output.temp)
+
+}
+
+output <- output[-1,]
+
+write.csv(output, "Number_of_SNPs_in_VCF_files.csv", row.names = FALSE)
+```
+
+
+
+

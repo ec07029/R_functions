@@ -1,0 +1,354 @@
+---
+title: 'Syncrip: Distance of HyperTRIBE edited sites to nearest HOMER motif'
+author: "Karen Chu"
+date: "3/5/2019"
+output: html_document
+---
+
+Purpose: This R script calculates distance of Syncrip HyperTRIBE edited sites to Syncrip's nearest HOMER motif for mouse cells. This script is based off of Zi-Ning's script for Msi2.
+
+All samples are mouse cells.
+Rn2 mouse cells have human syncrip overexpression.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, echo=FALSE}
+library(BSgenome.Mmusculus.UCSC.mm10) # Genome sequences 
+library(TxDb.Mmusculus.UCSC.mm10.knownGene) # Annotation databases generated from UCSC
+library(GenomicRanges)
+library(GenomicFeatures)
+library(Biostrings)
+library(dplyr)
+library(ggplot2)
+```
+
+Set working directory.
+
+```{r setwd}
+folder <- "~/mount/chuk/Syncrip/Syncrip_HSPC_HyperTRIBE/Analysis/distance_to_motif/3UTR_only/motif1/85percent_minscore/"
+min.score.value <- "85percent_min.score"
+```
+
+Import data.
+
+```{r import}
+setwd("~/mount/chuk/Syncrip/Syncrip_HSPC_HyperTRIBE/Analysis/try_with_dedupped_files/")
+
+hsc <- read.csv("Syncrip_HSC_snp_counts_significance_fpkm_filteredout_lessthan10_reads.csv")
+mpp <- read.csv("Syncrip_MPP_snp_counts_significance_fpkm_filteredout_lessthan10_reads.csv")
+
+hsc.filter <- hsc [ hsc$p.adj < 0.05 & hsc$diff.frequency >= 0.1, ]
+mpp.filter <- mpp [ mpp$p.adj < 0.05 & mpp$diff.frequency >= 0.1, ]
+
+hsc.bind <- hsc.filter %>% dplyr::select(c("seqnames", "start", "strand", "gene.symbol", "annotation"))
+mpp.bind <- mpp.filter %>% dplyr::select(c("seqnames", "start", "strand", "gene.symbol", "annotation"))
+
+molm13 <- rbind( hsc.bind, mpp.bind )
+
+```
+
+```{r import data, echo=FALSE}
+setwd("~/mount/chuk/Syncrip/Syncrip_HSPC_HyperTRIBE/Analysis/HOMER_larger_background_with_CpG_normalized/3_UTR_only/")
+
+msi2.motif <- t(as.matrix(read.table("./homerResults/motif1.motif", skip=1, header=FALSE, sep="\t"))) 
+```
+
+Get motif sequence (so paste it on the plots later).
+
+```{r get motif sequence}
+get.motif.sequence <- function(motif.matrix) {
+  
+  rownames(motif.matrix) <- c("A", "C", "G", "T")
+  indices <- apply( motif.matrix, 2, which.max)
+  nucleotides.matching.indices <- rownames(motif.matrix)[indices]
+  motif.sequence <- paste(nucleotides.matching.indices,collapse="")
+  
+  return(motif.sequence)
+  
+}
+
+motif.sequence <- get.motif.sequence(msi2.motif)
+```
+
+Prepare mouse annoation database and load mouse genome. Group exons by transcript ID. Exons include 5'UTR and 3'UTR.
+
+
+```{r txdb}
+txdb <- TxDb.Mmusculus.UCSC.mm10.knownGene
+exons.by.transcript.id <- GenomicFeatures::exonsBy(txdb, by=("tx"), use.names = TRUE) # Group exons by transcript ID
+genome <- BSgenome.Mmusculus.UCSC.mm10
+```
+
+
+Create Grange objects of filtered hypertribe edited sites.
+
+
+```{r grange objects}
+convert.filtered.hypertribe.sites.into.grange.objects <- function(df) {
+  
+  makeGRangesFromDataFrame(df,
+    seqnames.field="seqnames",
+    start.field="start",
+    end.field="start",
+    strand.field="strand",
+    keep.extra.columns = TRUE)
+  
+}
+
+grange.molm13 <- convert.filtered.hypertribe.sites.into.grange.objects(molm13)
+
+```
+
+
+Find the exon in mRNA transcript that contains the HyperTRIBE edited site. Sometimes hypertribe sites lie on the same exon, so duplicates are removed. This is one reason why the numbers between the number of hypertribe sites and the number of exons containing hypertribe sites are different.
+
+The reason why "grange.syncrip.hypertribe.sites.in.hsc.filtered.index.of.transcript.that.edited.site.overlaps.with" has a longer length than "grange.syncrip.hypertribe.sites.in.hsc.filtered" is because GenomicRanges::findOverlaps will find the overlap for EVERY transcript of a gene. For example, queryHits==6533 is a gene called Slc38a1, in which GenomicRanges found its hypertribe edited site overlaps at the same exon which is present in 3 different Slc38a1 transcripts. Therefore, one hypertribe edited site can overlap with the same exon that belongs in multiple transcripts.
+
+For "-" strands, reverse complement is used as sequence.
+
+
+```{r overlap}
+# 10/09/2019: Verified with IGV hg19 genome that these are obtaining the correct sequences corresponding to the genomic range coordinates.
+
+find.transcript.exon.that.overlaps.with.hypertribe.site <- function(hypertribe.df, exons.by.transcript.df) {
+  
+  exons.by.transcript.df <- unlist(exons.by.transcript.df)
+  
+  # Find exons that contain hypertribe edited site
+  hypertribe.site.overlap.exon <- GenomicRanges::findOverlaps(hypertribe.df, exons.by.transcript.df)
+  
+  # List hypertribe edited sites used to query for exons (duplicate rows indicate that hypertribe site found on the same exon that belongs to multiple transcripts)
+  query.hits <- hypertribe.df[queryHits(hypertribe.site.overlap.exon),]
+  
+  # List exons that contain hypertribe edited sites (exons can belong to multiple transcripts)
+  subject.hits <- exons.by.transcript.df[subjectHits(hypertribe.site.overlap.exon),]
+  
+  # Add exon id to metadata of hypertribe sites
+  query.hits@elementMetadata$exon_id <- subject.hits@elementMetadata$exon_id
+  
+  # Remove duplicate rows in query.hits (hypertribe sites) & subject.hits (list of exons with hypertribe site)
+  query.hits.deduped <- query.hits[!duplicated(query.hits)]
+  subject.hits.deduped <- subject.hits[!duplicated(subject.hits)]
+  
+  # get actual sequences of exons containing edits
+  subject.hits.seqs <- getSeq(genome, subject.hits.deduped)
+
+  return(list("hypertribe.sites.in.exons" = query.hits.deduped, 
+              "exons.with.hypertribe.sites" = subject.hits.deduped,
+              "sequence.of.exons.with.hypertribe.site" = subject.hits.seqs))
+  
+}
+
+grange.molm13.sequences <- find.transcript.exon.that.overlaps.with.hypertribe.site(grange.molm13, exons.by.transcript.id)
+```
+
+
+A position weight matrix is a representation of motifs/patterns in sequences. The purpose of calculating position weight matrix is to distinguish true binding sites from non-functional sites with similar sequence.
+
+Create position frequency matrix: A matrix containing frequency of each nucleotide at each position in motif
+1) Divide the frequency of each nucleotide by the sum of the frequencies (in which the sum=1)/
+2) Multiply those numbers by 1x10^9. (Not sure why Zi-Ning does this - I suspect to meet an input requirement for one of R's functions)
+
+Calculate priors: A vector containing the frequency of each nucleotide appearing in all exon sequences containing hypertribe sites
+1) Sum the count of each nucleotide from all sequences
+2) Divide sum of each nucleotide by the total number of all nucleotides; This gives you the frequency of each nucleotide appearing in all full exon sequences containing hypertribe edited site.
+
+Calculate position weight matrix:
+1) priorProbs = priors/sum(priors) # basically equals the priors from above (no change) 
+2) postProbs = (motif.matrix + priors)/(length(motif.matrix) + sum(priors)) # where motif.matrix is the PFM from above
+3) pwm # calculate the estimated probability of base b at position i
+4) matchPWM: "It walks the subject (DNA sequence) and for each position on the subject it computes the score obtained by positioning the pwm (Position Weight Matrix) at this position. If the score is equal or greater than the threshold specified via the min.score argument then a match is reported at that position." I think this is done to identify sequences are similar enough to the binding motif based on the PWM (which is a matrix estimating the probability of a nucleotide at a specific position)
+
+
+```{r pfm}
+# Create position frequency matrix of motif file, calculate priors, and calculate position weight matrix.
+calculate.PWM <- function(matrix.of.HOMER.motif.results, grange.hypertribe.sites.filtered.sequences) {
+  
+  ## Step 1: Create position frequency matrix of motif file.
+  # sums frequencies of A, C, G, T and saves as list
+  sum.of.nucleotides.at.each.nucleotide.position.in.motif.sequence <- lapply(colSums(matrix.of.HOMER.motif.results),function(x) rep(x, nrow(matrix.of.HOMER.motif.results))) 
+  
+  # unlists the list as a matrix with order the same as the transposed motif input file
+  scale.matrix <- matrix(unlist(sum.of.nucleotides.at.each.nucleotide.position.in.motif.sequence), nrow = nrow(matrix.of.HOMER.motif.results), ncol = ncol(matrix.of.HOMER.motif.results)) 
+  
+  # divide each frequency by sum of frequencies and then multiple by that huge scaling factor
+  motif.matrix <- 1000000000 * matrix.of.HOMER.motif.results / scale.matrix 
+  rownames(motif.matrix) <- c("A", "C", "G", "T")
+  motif.matrix <- round(motif.matrix)
+  
+  # Changes class of values in motif.matrix as "integer" rather than its original class, which is "numeric"
+  storage.mode(motif.matrix) <- "integer" 
+  
+  
+  ## Step 2: Calculate priors.
+  # counts the number of times a nucleotide appears in the sequence string
+  oligo.freq.df <- oligonucleotideFrequency(grange.hypertribe.sites.filtered.sequences$sequence.of.exons.with.hypertribe.site, 1) 
+  
+  # sum of each nucleotide count, then divide by the total sum of all counts from all nucleotides; this gives you frequency of each nucleotide appearing in all the full exon sequences containing hypertribe edited site
+  priors <- colSums(oligo.freq.df)/sum(oligo.freq.df) 
+  
+  
+  ## Step 3: Calculate position weight matrix:
+  priorProbs = priors/sum(priors)
+  postProbs = (motif.matrix + priors)/(length(motif.matrix) + sum(priors))
+  pwm <- PWM(motif.matrix, type="log2probratio", prior.params=priors) 
+  
+  # start and end are always 8 nucleotides apart; Sequences similar to the motif (which is related to the concept of PWM)
+  matched <- lapply(grange.hypertribe.sites.filtered.sequences$sequence.of.exons.with.hypertribe.site, function(x) matchPWM(pwm, x, min.score="85%", with.score=TRUE))
+  
+  # Position of sequences within the exons containing hypertribe sites that meet the required threshold used to determine similar binding motif patterns
+  matched.irangeslist <- IRangesList(lapply(matched, function(x) as(x, "IRanges"))) 
+  
+  return(list(matched, matched.irangeslist))
+  
+}
+
+molm13.start.end.relative.to.exon.sequence.of.motifs.similar.to.consensus.binding.site <- calculate.PWM(msi2.motif, grange.molm13.sequences)
+
+saveRDS(molm13.start.end.relative.to.exon.sequence.of.motifs.similar.to.consensus.binding.site, 
+        paste0(folder, 
+               "molm13.start.end.relative.to.exon.sequence.of.motifs.similar.to.consensus.binding.site_", min.score.value, "_for_matchPWM.RDS"))
+```
+
+
+1) Add exon ID to the genomic coordinates to the motifs similar to the binding motif.
+2) Calculate minimum distance between hyperTRIBE site to similar motif.
+
+
+```{r calculate minimum distance}
+setwd(folder)
+
+# Get genomic coordinates of the 8-nucleotide long motifs that met the threshold for being similar enough to the binding motif
+# @params grange.hypertribe.sites.filtered.sequences: Genomic coordinates of exons containing HyperTRIBE sites
+# @params matched.irangeslist: Coordinates of similar motif relative to exon start position
+genomic.coordinates.of.similar.binding.motifs <- 
+  function(grange.hypertribe.sites.filtered.sequences, matched.irangeslist) {
+  
+  # Merge into one dataframe the genomic coordinates of exons with hypertribe sites with coordinates of similar motif relative to exon start position
+  subject.hits.gr <- as(grange.hypertribe.sites.filtered.sequences$exons.with.hypertribe.sites, "GRangesList")
+  gr <- subject.hits.gr # R will error and look for "gr" object in environment. I don't know why but this command fixes that.
+  gr.df <- as.data.frame(gr) # Genomic coordinates of exons with hypertribe sites
+  gr.df <- cbind(gr.df, gr@elementMetadata) # Add on exon ID to dataframe
+  ir.df <- as.data.frame(matched.irangeslist) # Coordinates of similar motif relative to exon start position
+  
+  # Prepare dataframe to fill in start and end genomic coordinate of similar motif
+  ir.df.with.exon.id <- as.data.frame(merge(ir.df, gr.df, by="group"))
+  colnames(ir.df.with.exon.id) <- c("group", "group_name", "start.relative.to.exon.start", "end.relative.to.exon.end",
+                                    "width.of.motif", "group_name", "chr", "start.genomic.coordinate", "end.genomic.coordinate",
+                                    "width.of.exon", "strand", "exon_id", "exon_name", "exon_rank")
+  ir.df.with.exon.id$start.of.motif <- "NA"
+  ir.df.with.exon.id$end.of.motif <- "NA"
+  
+  # Calculate genomic coordinate of similar motif (strand value (+ or -) is taken into consideration)
+  ir.df.with.exon.id$start.of.motif <- ifelse( ir.df.with.exon.id$strand == "+",
+                    ir.df.with.exon.id$start.genomic.coordinate + ir.df.with.exon.id$start.relative.to.exon.start -1, 
+                    ir.df.with.exon.id$end.genomic.coordinate - ir.df.with.exon.id$end.relative.to.exon.end +1)
+  
+  ir.df.with.exon.id$end.of.motif <- ifelse( ir.df.with.exon.id$strand == "+",
+                    ir.df.with.exon.id$start.genomic.coordinate + ir.df.with.exon.id$end.relative.to.exon.end -1, 
+                    ir.df.with.exon.id$end.genomic.coordinate - ir.df.with.exon.id$start.relative.to.exon.start +1)
+  
+  # Return final dataframe
+  return(ir.df.with.exon.id)
+
+}
+
+genomic.coordinates.of.similar.binding.motifs <-
+genomic.coordinates.of.similar.binding.motifs(grange.molm13.sequences, molm13.start.end.relative.to.exon.sequence.of.motifs.similar.to.consensus.binding.site[[2]])
+```
+
+
+Calculate distance between HyperTRIBE site to nearest motif.
+
+
+```{r calculate minimum distance}
+setwd(folder)
+
+# This function gets the minimum distances out of all possible motif candidates
+# For each hypertribe site, subsets the dataframe of MSI2 motifs to obtain the exon that contains the hypertribe site. Among all the MSI2 motifs in that exon, pick the one that is the closest to the hypertribe site.
+
+# @params genomic.coordinates.of.similar.binding.motifs: output of "genomic.coordinates.of.similar.binding.motifs" function (above). Remember that some exons don't contain any similar motifs so they would be excluded.
+# @params grange.hypertribe.sites.filtered.sequences: First item on list contains HyperTRIBE site genomic coordinate
+GetMinimumDistance <- function(genomic.coordinates.of.similar.binding.motifs.in.cell.type,
+                               grange.hypertribe.sites.filtered.sequences) {
+  
+  hypertribe.sites <- as.data.frame(grange.hypertribe.sites.filtered.sequences[[1]])
+  hypertribe.sites$dist.to.motif <- "NA"
+  # hypertribe.sites$motif.chr <- "NA"
+  # hypertribe.sites$motif.start <- "NA"
+  # hypertribe.sites$motif.end <- "NA"
+  
+  for (i in 1:nrow(hypertribe.sites)) {
+    
+    shared.exon.on.similar.motif <- subset(genomic.coordinates.of.similar.binding.motifs.in.cell.type, exon_id == hypertribe.sites$exon_id[i])
+    
+    if ( nrow(shared.exon.on.similar.motif) == 0 ) {
+      
+      next
+      
+    } else {
+      
+        distance.to.each.motif <- c( hypertribe.sites$start[i] - shared.exon.on.similar.motif$start.of.motif,
+                                     hypertribe.sites$start[i] - shared.exon.on.similar.motif$end.of.motif )
+        vector.idx <- which.min(abs(distance.to.each.motif))
+        hypertribe.sites$dist.to.motif[i] <- as.numeric( distance.to.each.motif[vector.idx] )
+        
+        # hypertribe.sites$motif.chr[i] <- shared.exon.on.similar.motif$chr[vector.idx]
+        # hypertribe.sites$motif.start[i] <- as.numeric( shared.exon.on.similar.motif$start.of.motif[vector.idx])
+        # hypertribe.sites$motif.end[i] <- as.numeric( shared.exon.on.similar.motif$end.of.motif[vector.idx])
+      
+    }
+    
+
+
+  }
+  
+  return(hypertribe.sites)
+  
+}
+
+molm13.distance.to.nearest.motif <- GetMinimumDistance(genomic.coordinates.of.similar.binding.motifs, grange.molm13.sequences)
+
+molm13.distance.to.nearest.motif$dist.to.motif <- as.numeric(molm13.distance.to.nearest.motif$dist.to.motif)
+
+write.csv(molm13.distance.to.nearest.motif,
+          paste0("molm13.distance.to.nearest.motif_", min.score.value, "_for_matchPWM.csv"), row.names = FALSE)
+```
+
+PDF
+
+```{r pdf}
+setwd(folder)
+
+plot.distance.to.nearest.motif <- function(df, motif.seq, input.color) {
+
+  png(paste0("distance_to_motif_", min.score.value, ".png"), 1000, 800)
+  p <- ggplot(df, aes(dist.to.motif, fill=cell.type)) + 
+    geom_density(color = "black", alpha = 0.7) + 
+    scale_fill_manual(values = c(input.color)) +
+    # scale_x_continuous(breaks = seq(-1000, 1000, 500), limits = c(-1000,1000)) +
+    theme_minimal() +
+    xlab("\nDistance (bp)") + ylab("Density\n") +
+    theme(axis.text=element_text(size=50, color="black"), axis.title=element_text(size=50, color="black")) + # make axis labels bigger
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    ggtitle(paste0("Distance between hypertribe site & nearest motif\nmotif sequence: ", 
+                   motif.sequence, "; ",
+                   min.score.value, "\n")) +
+    theme(plot.title = element_text(size=20)) +
+    theme(legend.title=element_text(size=0), 
+          legend.text=element_text(size=35)) +
+    theme(axis.text=element_text(size=50), axis.title.x = element_text(size=50), axis.title.y = element_text(size=50), #edit font size of x & y labels
+          panel.border = element_blank(), axis.line.x = element_line(size = 1.5), axis.line.y = element_line(size = 1.5)) #get rid of top and right border lines
+  print(p)
+  dev.off()
+
+}
+
+molm13.distance.to.nearest.motif$cell.type <- "MOLM13"
+
+plot.distance.to.nearest.motif(molm13.distance.to.nearest.motif, motif.sequence, "skyblue")
+```
+

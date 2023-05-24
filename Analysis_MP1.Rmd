@@ -1,0 +1,159 @@
+---
+title: "Nanopore"
+author: "Karen Chu"
+date: "11/5/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries
+
+```{r lib}
+library(openxlsx)
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+```
+
+Directories
+
+```{r dir}
+output.dir <- "~/mount/chuk/RBM15_Dart-Seq/Project_11379_B/Analysis/MP1/"
+comparison.name <- "RBM15_DartSeq_MP1"
+```
+
+Import data
+
+ADA 1 and WT 1 samples were switched per Nathan's advice back in the betabinom.R step but not in the SNP count step.
+
+```{r data}
+setwd("~/mount/chuk/RBM15_Dart-Seq/Project_11379_B/JAX_0488/")
+
+df <- read.csv("RBM15_Dart-seq_MP1_B_vs_MP1_M_snp_counts_significance.csv")
+
+df.filter <- subset(df, p.adj < 0.1)
+```
+
+```{r out}
+setwd(output.dir)
+
+write.csv(df.filter, paste0(comparison.name, "_snp_counts_significance_FILTERED_p.adj_0.1.csv"),
+          row.names = FALSE)
+```
+
+
+Scatterplot of edit freq
+
+```{r scatterplot}
+setwd(output.dir)
+
+png(paste0(comparison.name, "_edit_freq_scatterplot.png"), 400, 400)
+p <- ggplot(df, aes(x=MP1_M.frequency,
+                     y=MP1_B.frequency)) +
+  geom_point(size=2) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(plot.title = element_text(size=20)) +
+  theme(axis.text=element_text(size=20, color="black"), axis.title=element_text(size=20, color="black")) +
+  theme(axis.line = element_line(colour = "black", size=1)) +
+  ggtitle(paste0(comparison.name, " Dart-Seq\nEdit Frequency\n(unfiltered)"))
+print(p)
+dev.off()
+
+png(paste0(comparison.name, "_edit_freq_filter_p.adj_0.1_scatterplot.png"), 400, 400)
+p <- ggplot(df.filter, aes(x=MP1_M.frequency,
+                     y=MP1_B.frequency)) +
+  geom_point(size=2) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(plot.title = element_text(size=20)) +
+  theme(axis.text=element_text(size=20, color="black"), axis.title=element_text(size=20, color="black")) +
+  theme(axis.line = element_line(colour = "black", size=1)) +
+  ggtitle(paste0(comparison.name, " Dart-Seq\nEdit Frequency\n(p-adj < 0.1)"))
+print(p)
+dev.off()
+```
+
+Barplot of diff.freq
+
+```{r scatterplot}
+setwd(output.dir)
+
+png(paste0(comparison.name, "_diff.freq_histogram.png"), 400, 400)
+hist(df$diff.frequency, main=paste0(comparison.name, " unfiltered diff.freq"))
+dev.off()
+
+png(paste0(comparison.name, "_diff.freq_filter_p.adj_0.1_histogram.png"), 400, 400)
+hist(df.filter$diff.frequency, main=paste0(comparison.name, " (p-adj < 0.1) diff.freq"))
+dev.off()
+```
+
+Number of edits per gene in filtered dataset
+
+```{r number}
+df.filter.final <- df.filter %>% select(-c("gene.num.edits"))
+
+num.edits.per.gene.filter <- as.data.frame( table(df.filter.final$entrez.id) )
+colnames(num.edits.per.gene.filter) <- c("entrez.id", "num.edits.per.gene")
+temp <- merge(df.filter.final, num.edits.per.gene.filter)
+
+subset(temp, num.edits.per.gene >= 5) -> temp2
+unique(temp2$gene.symbol)
+```
+
+Scatterplot to show MP1 replicate 1 is driving the significance and not MP1 replicate 2.
+
+```{r scatterplot}
+setwd(output.dir)
+
+png(paste0(comparison.name, "_edit_freq_filter_p.adj_0.1_B1_vs_B2_scatterplot.png"), 400, 400)
+p <- ggplot(df.filter, aes(x=Sample_MP1_B2_IGO_11379_B_17.dedupped.bam.alt.count,
+                     y=Sample_MP1_B1_IGO_11379_B_16.dedupped.bam.alt.count)) +
+  geom_point(size=2) +
+  geom_abline(slope=1, intercept=0, color="red") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(plot.title = element_text(size=10)) +
+  theme(axis.text=element_text(size=20, color="black"), axis.title=element_text(size=20, color="black")) +
+  theme(axis.line = element_line(colour = "black", size=1)) +
+  ggtitle(paste0(comparison.name, " Dart-Seq\nEdit Frequency\n(p-adj < 0.1)\nDatapoints represent edit sites"))
+print(p)
+dev.off()
+
+png(paste0(comparison.name, "_edit_freq_filter_p.adj_0.1_B1_vs_B2_num.edit.sites_greaterthanequal_5_scatterplot.png"), 400, 400)
+p <- ggplot(temp2, aes(x=Sample_MP1_B2_IGO_11379_B_17.dedupped.bam.alt.count,
+                     y=Sample_MP1_B1_IGO_11379_B_16.dedupped.bam.alt.count)) +
+  geom_point(size=2) +
+  xlim(c(0,150)) +
+  geom_abline(slope=1, intercept=0, color="red") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(plot.title = element_text(size=10)) +
+  theme(axis.text=element_text(size=20, color="black"), axis.title=element_text(size=20, color="black")) +
+  theme(axis.line = element_line(colour = "black", size=1)) +
+  ggtitle(paste0(comparison.name, " Dart-Seq\nEdit Frequency\n(p-adj < 0.1)\nDatapoints represent edit sites of genes that have # of edit sites >= 5"))
+print(p)
+dev.off()
+```
+
+Pie chart annotation
+
+```{r pie}
+setwd(output.dir)
+
+png(paste0(comparison.name, "_pie.chart.annotation_p.adj_0.1.png"), 400, 400)
+slices <- table(df.filter.final$annotation)
+percentage.annotation <- slices/sum(slices)
+lbls <- paste0( names(slices), "; ", round(percentage.annotation*100, 1), "%" )
+pie(slices, labels = lbls, main="Pie Chart of annotation (p-adj < 0.1)")
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+

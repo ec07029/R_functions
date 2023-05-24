@@ -1,0 +1,319 @@
+---
+title: "plot CRISPR sgRNA"
+author: "Karen Chu"
+date: "2/19/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Library
+
+```{r lib}
+library(openxlsx)
+library(dplyr)
+library(Biostrings)
+library(stringr)
+library(ggplot2)
+
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+library(BSgenome.Hsapiens.UCSC.hg19)
+```
+
+Work dir
+
+```{r work dir}
+figures.dir <- "~/Desktop/Nynrin/figures/"
+output.dir <- "~/Desktop/Nynrin/output/"
+```
+
+Import data
+
+```{r data}
+df.original <- read.csv("~/Desktop/Nynrin/data/NYNRIN_D3_vs_D17_All_Karen.csv")
+df <- df.original %>% dplyr::select(c("logFC", "SEQ"))
+rownames(df) <- df.original$NAME
+```
+
+Get genomic coords of gene of interest
+
+```{r genomic coords}
+txdb.genes = genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
+
+# Get genomic coord of gene
+gene.coords <- subset(txdb.genes, gene_id==57523) 
+```
+
+Get sequence of gene of interest.
+
+```{r seq}
+genome <- BSgenome.Hsapiens.UCSC.hg19
+
+# Obtain sequence
+gene.seq <- Biostrings::getSeq(genome, gene.coords) # second argument needs grange object with coordinates'
+
+# Obtain sequence as string
+gene.seq.df <- as.data.frame(gene.seq) 
+```
+
+Get reverse complement of sequence
+
+```{r reverse}
+reverse.gene.seq <- reverseComplement(gene.seq)
+reverse.gene.seq.df <- as.data.frame(reverse.gene.seq) 
+```
+
+Remove controls
+
+```{r controls}
+df <- subset(df, !(grepl("Safe|Control", rownames(df))) )
+```
+
+Obtain start and end position of sgRNA sequence in gene sequence on + strand
+
+```{r index}
+setwd(output.dir)
+
+df.positive.strand <- df
+
+df.positive.strand$start.pos <- NA
+df.positive.strand$end.pos <- NA
+
+for (i in 1:nrow(df)) {
+  
+  sgRNA.index <- gregexpr(df.positive.strand$SEQ[i], gene.seq.df) # Returns positions of every match in a string
+  start.pos <- unlist(sgRNA.index)
+  
+  if ( start.pos == -1 ) {
+    
+    next
+    
+  } else { 
+    
+    end.pos <- start.pos + attr(sgRNA.index[[1]],'match.length') # Add start position with length of match
+  
+    # Add positions to dataframe
+    df.positive.strand$start.pos[i] <- start(gene.coords) + start.pos - 1
+    df.positive.strand$end.pos[i] <- start(gene.coords) + end.pos - 1
+    
+    }
+  
+}
+
+write.csv(df.positive.strand, "Nynrin_sgRNA_matched_index_positive_strand.csv")
+```
+
+
+Obtain start and end position of sgRNA sequence in gene sequence on - strand
+
+
+```{r index}
+setwd(output.dir)
+
+df.negative.strand <- df
+
+df.negative.strand$start.pos <- NA
+df.negative.strand$end.pos <- NA
+
+for (i in 1:nrow(df)) {
+  
+  sgRNA.index <- gregexpr(df.negative.strand$SEQ[i], reverse.gene.seq.df) # Returns positions of every match in a string
+  start.pos <- unlist(sgRNA.index)
+  if ( start.pos == -1 ) {
+
+    next
+    
+  } else { 
+    
+    # Add positions to dataframe
+    # Add or subtract 1 because of R indexing
+    df.negative.strand$start.pos[i] <- end(gene.coords) - start.pos - attr(sgRNA.index[[1]],'match.length') + 1
+    df.negative.strand$end.pos[i] <- end(gene.coords) - start.pos + 1
+    
+    }
+  
+  
+}
+
+write.csv(df.negative.strand, "Nynrin_sgRNA_matched_index_negative_strand.csv")
+```
+
+Combine positions of sgRNA from + and - strand together.
+
+```{r combine}
+setwd(output.dir)
+
+# Obtain index of sgRNA matching to opposite strand
+missing.value.index.positive.strand <- which( is.na(df.positive.strand$start.pos))
+missing.value.index.negative.strand <- which( is.na(df.negative.strand$start.pos))
+
+# Create final dataframe with start and end positions from + and - strand
+df.final <- df.positive.strand
+df.final$start.pos[missing.value.index.positive.strand] <- df.negative.strand$start.pos[missing.value.index.positive.strand]
+df.final$end.pos[missing.value.index.positive.strand] <- df.negative.strand$end.pos[missing.value.index.positive.strand]
+
+write.csv(df.final, "Nynrin_sgRNA_matched_index_final_plot_input.csv")
+```
+
+Get exon coordinates of gene of interest.
+
+```{r exon}
+setwd(output.dir)
+
+# Get genomic coordinates of transcripts
+txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
+transcripts <- transcriptsBy(txdb, by="gene")
+gene.transcripts.index <- subjectHits( findOverlaps(gene.coords, transcripts) )
+gene.transcripts.final <- transcripts[gene.transcripts.index]
+
+gene.transcripts.final.df <- as.data.frame(gene.transcripts.final)
+tx_names <- gene.transcripts.final.df$tx_name
+exons <- exonsBy(txdb, "tx", use.names=TRUE)[tx_names]
+
+write.csv(exons[[1]], "Nynrin_exon_coordinates.csv")
+```
+
+Calculate exon positions relative to start position
+
+```{r position relative to start}
+# Calculate positions relative to if start of gene is 0 coordinate
+
+calculate.relative.position <- function(exons.df) {
+  
+  isoform<- as.data.frame(exons.df)
+  isoform$start.relative <- isoform$start - start(gene.coords )
+  isoform$end.relative <- isoform$end - start(gene.coords)
+  
+  return(isoform)
+  
+}
+
+isoform.one <- calculate.relative.position(exons[[1]])
+```
+
+Plot gene with sgRNA logfc
+Plot negative and positive sgRNA logfc separately for visual aesthetics.
+
+```{r mid point}
+setwd(figures.dir)
+
+# Calculate mid-point between start and end pos
+df.final$mid.point <- df.final$start.pos + ( (df.final$end.pos - df.final$start.pos) /2)
+
+# Change negative logfc to positive
+negative.logfc.only <- subset(df.final, logFC < 0)
+negative.logfc.only$logFC <- negative.logfc.only$logFC*-1
+positive.logfc.only <- subset(df.final, logFC >= 0)
+
+plot.gene <- function(df.input, isoform.input, pos.or.neg.logfc) {
+  
+  png(paste0("Nynrin_sgRNA_", pos.or.neg.logfc, ".png"), 1500, 500)
+  p<-ggplot(data=df.input, aes(x=mid.point, y=logFC)) +
+    geom_bar(stat="identity", fill="darkred", width=50) +
+    geom_segment(x=start(gene.coords), y= -0.4,
+                 xend=end(gene.coords), 
+                 yend= -0.4,
+                 size=3, color="black") +
+    theme_minimal() +
+    #xlab("\nGene Coordinates") + 
+    ggtitle(paste0("Nynrin: ", pos.or.neg.logfc, " sgRNAs\n")) +
+    ylab("Log Fold Change\n") +
+    xlim( start(gene.coords), end(gene.coords) ) +
+    ylim(0,max(c(negative.logfc.only$logFC, positive.logfc.only$logFC))+0.5) + 
+    theme(plot.title = element_text(size=22),
+          axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank(),
+          axis.text.y   = element_text(size=20),
+          #axis.text.x   = element_text(size=20),
+          axis.title.y  = element_text(size=20),
+          #axis.title.x  = element_text(size=20),
+          panel.background = element_blank(),
+          panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black"),
+          panel.border = element_rect(colour = "black", fill=NA, size=2)) +
+    coord_cartesian(clip="off") +
+    theme(plot.margin=unit(c(2,2,2,2),"cm"))
+
+  # Add geom segments with for loop
+  for (i in 1:nrow(isoform.input)) {
+     p <- p + geom_segment(x=isoform.input$start[i], y= -0.4, 
+                           xend=isoform.input$end[i], yend= -0.4,
+                           size=5,
+                           color="gray")
+  }
+  
+  print(p)
+  
+  dev.off()
+  
+}
+
+plot.gene(negative.logfc.only, isoform.one, "Negative.Logfc")
+plot.gene(positive.logfc.only, isoform.one, "Positive.Logfc")
+```
+
+Positive and negative logfc on same plot
+
+```{r combined plot}
+setwd(figures.dir)
+
+# Calculate mid-point between start and end pos
+df.final$mid.point <- df.final$start.pos + ( (df.final$end.pos - df.final$start.pos) /2)
+
+plot.gene <- function(df.input, isoform.input, isoform.name) {
+  
+  png(paste0("Nynrin_sgRNA.png"), 1200, 500)
+  p<-ggplot(data=df.input, aes(x=mid.point, y=logFC)) +
+    geom_bar(stat="identity", fill="darkred", width=50) +
+    geom_segment(x=start(gene.coords), y= 0,
+                 xend=end(gene.coords),
+                 yend= 0,
+                 size=3, color="black") +
+    theme_minimal() +
+    ggtitle(paste0("Nynrin: sgRNAs\n")) +
+    ylab("Log Fold Change\n") +
+    xlim( start(gene.coords), end(gene.coords) ) +
+    ylim( (max(abs(df.final$logFC))+0.25)*-1, max(abs(df.final$logFC))+0.25) +
+    theme(plot.title = element_text(size=22),
+          axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank(),
+          axis.text.y   = element_text(size=20),
+          #axis.text.x   = element_text(size=20),
+          axis.title.y  = element_text(size=20),
+          #axis.title.x  = element_text(size=20),
+          panel.background = element_blank(),
+          panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black"),
+          panel.border = element_rect(colour = "black", fill=NA, size=2)) +
+    coord_cartesian(clip="off") +
+    theme(plot.margin=unit(c(2,2,2,2),"cm"))
+
+  # Add geom segments with for loop
+  for (i in 1:nrow(isoform.input)) {
+     p <- p + geom_segment(x=isoform.input$start[i], y= 0, 
+                           xend=isoform.input$end[i], yend= 0,
+                           size=5,
+                           color="gray")
+  }
+  
+  print(p)
+  
+  dev.off()
+  
+}
+
+plot.gene(df.final, isoform.one)
+
+```
+
+
+
+
+
+

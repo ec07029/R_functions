@@ -1,0 +1,78 @@
+---
+title: "obtain most edited site for each gene target"
+author: "Karen Chu"
+date: "8/6/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Working dir
+
+```{r dir}
+output.dir <- "~/mount/chuk/Nynrin/HyperTRIBE/Analysis/OCIAML_HyperTRIBE_Analysis/non-trimmed_reads/output/"
+figures.dir <- "~/mount/chuk/Nynrin/HyperTRIBE/Analysis/OCIAML_HyperTRIBE_Analysis/non-trimmed_reads/figures/"
+```
+
+Import data
+
+```{r import}
+df.filter <- read.csv("~/mount/chuk/Nynrin/HyperTRIBE/Analysis/OCIAML_HyperTRIBE_Analysis/non-trimmed_reads/output/Nynrin_OCIAML_Sample_O_ADAR_vs_Sample_O_ctrl_snp_counts_significance_fpkm_filter.csv")
+```
+
+Get maximum edit frequency for each gene
+
+```{r max}
+# Get max edited site
+library(dplyr)
+df.filter.max.edit.freq <- df.filter %>% group_by(gene.symbol) %>% slice(which.max(diff.frequency))
+df.filter.max.edit.freq.df <- as.data.frame(df.filter.max.edit.freq)
+
+# Write output
+setwd(output.dir)
+write.csv(df.filter.max.edit.freq.df, 
+          "Nynrin_OCIAML_p.adj_diff.freq_fpkm_filtered_dataset_most_edited_site_per_gene.csv",
+          row.names = FALSE)
+
+# Check it worked
+duplicated.genes <- df.filter[ duplicated(df.filter$gene.symbol),]$gene.symbol
+test.gene <- "PIGS"
+subset(df.filter, gene.symbol==test.gene)
+subset(df.filter.max.edit.freq.df, gene.symbol==test.gene)
+```
+
+Get maximum edit frequency for each gene (unfiltered)
+
+```{r max}
+# Clear enrivonment to prevent mistakes cause of reusing code
+rm(list = ls())
+
+# Directories
+output.dir <- "~/mount/chuk/Nynrin/HyperTRIBE/Analysis/OCIAML_HyperTRIBE_Analysis/non-trimmed_reads/output/"
+figures.dir <- "~/mount/chuk/Nynrin/HyperTRIBE/Analysis/OCIAML_HyperTRIBE_Analysis/non-trimmed_reads/figures/"
+
+# Import data
+df <- read.csv("~/mount/chuk/Nynrin/HyperTRIBE/Project_10932_B_Nynrin_hypertribe/beta-binom_output/non-trimmed_reads/OCIAML/output/Nynrin_OCIAML_Sample_O_ADAR_vs_Sample_O_ctrl_snp_counts_significance_fpkm.csv")
+
+# Get max
+library(dplyr)
+df.max.edit.freq <- df %>% group_by(gene.symbol) %>% slice(which.max(diff.frequency))
+df.max.edit.freq.df <- as.data.frame(df.max.edit.freq)
+
+# Write output
+setwd(output.dir)
+write.csv(df.max.edit.freq.df, 
+          "Nynrin_OCIAML_unfiltered_dataset_most_edited_site_per_gene.csv",
+          row.names = FALSE)
+
+# Check that the max edit site was selected from genes with mutiple edit sites
+
+duplicated.genes <- df[ duplicated(df$gene.symbol),]$gene.symbol
+test.gene <- "CLUH"
+subset(df, gene.symbol==test.gene)
+subset(df.max.edit.freq.df, gene.symbol==test.gene)
+```
+
+

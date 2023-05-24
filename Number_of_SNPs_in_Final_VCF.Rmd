@@ -1,0 +1,244 @@
+---
+title: "Number of SNPs in VCF"
+author: "Karen Chu"
+date: "11/25/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries
+
+```{r lib}
+library(ggplot2)
+```
+
+Import data
+
+```{r data}
+vcf.files <- Sys.glob("~/mount/chuk/RBM15_Dart-Seq/Project_11379_B/JAX_0488/*.FinalR.vcf.no.header")
+```
+
+Count the number of SNPs for C -> T and G -> A.
+
+```{r count}
+df <- data.frame()
+
+for (i in 1:length(vcf.files)) {
+  
+  print(i)
+  print(vcf.files[i])
+  
+  # import vcf
+  vcf <- read.delim(vcf.files[i], header = FALSE)
+  
+  # number of snps called
+  vcf.filter <- vcf[ vcf$V3 == ".", ] # remove all known snps
+  
+  # number of C to T, G to A (apobec)
+  vcf.c.to.t <- vcf.filter[ vcf.filter$V4=="C" & vcf.filter$V5=="T", ]
+  vcf.g.to.a <- vcf.filter[ vcf.filter$V4=="G" & vcf.filter$V5=="A", ]
+  
+  # number of edits we don't care about
+  vcf.a.to.g <- vcf.filter[ vcf.filter$V4=="A" & vcf.filter$V5=="G", ]
+  vcf.a.to.c <- vcf.filter[ vcf.filter$V4=="A" & vcf.filter$V5=="C", ]
+  vcf.a.to.t <- vcf.filter[ vcf.filter$V4=="A" & vcf.filter$V5=="T", ]
+  
+  vcf.t.to.a <- vcf.filter[ vcf.filter$V4=="T" & vcf.filter$V5=="A", ]
+  vcf.t.to.c <- vcf.filter[ vcf.filter$V4=="T" & vcf.filter$V5=="C", ]
+  vcf.t.to.g <- vcf.filter[ vcf.filter$V4=="T" & vcf.filter$V5=="G", ]
+  
+  vcf.c.to.a <- vcf.filter[ vcf.filter$V4=="C" & vcf.filter$V5=="A", ]
+  vcf.c.to.g <- vcf.filter[ vcf.filter$V4=="C" & vcf.filter$V5=="G", ]
+  
+  vcf.g.to.c <- vcf.filter[ vcf.filter$V4=="G" & vcf.filter$V5=="C", ]
+  vcf.g.to.t <- vcf.filter[ vcf.filter$V4=="G" & vcf.filter$V5=="T", ]
+
+  vcf.name <- gsub(".*JAX_0488/", "", vcf.files[i])
+  vcf.name.final <- gsub(".no.header", "", vcf.name)
+  df.vcf <- data.frame(sample = vcf.name.final, 
+                       num.of.snp = nrow(vcf.filter),
+                       
+                       C.to.T = nrow(vcf.c.to.t), 
+                       G.to.A = nrow(vcf.g.to.a), 
+                       
+                       A.to.G = nrow(vcf.a.to.g), 
+                       A.to.C = nrow(vcf.a.to.c), 
+                       A.to.T = nrow(vcf.a.to.t), 
+                       
+                       T.to.A = nrow(vcf.t.to.a), 
+                       T.to.C = nrow(vcf.t.to.c), 
+                       T.to.G = nrow(vcf.t.to.g),
+                       
+                       C.to.A = nrow(vcf.c.to.a), 
+                       C.to.G = nrow(vcf.c.to.g), 
+
+                       G.to.C = nrow(vcf.g.to.c), 
+                       G.to.T = nrow(vcf.g.to.t) )
+  
+  df <- rbind(df, df.vcf)
+  
+}
+```
+
+```{r write}
+setwd("~/mount/chuk/RBM15_Dart-Seq/Project_11379_B/Analysis/")
+
+write.csv(df, "FinalR.vcf_SNPs_called.csv", row.names = FALSE)
+```
+
+Do the same for MOLM13
+
+Count the number of SNPs for C -> T and G -> A.
+
+```{r count}
+vcf.files <- Sys.glob("~/mount/chuk/MOLM13/MOLM13_align_to_GRCh38/*.FinalR.vcf.no.header")
+molm.df <- data.frame()
+
+for (i in 1:length(vcf.files)) {
+  
+  print(i)
+  print(vcf.files[i])
+  
+  # import vcf
+  vcf <- read.delim(vcf.files[i], header = FALSE)
+  
+  # number of snps called
+  vcf.filter <- vcf[ vcf$V3 == ".", ] # remove all known snps
+  
+  # number of C to T, G to A (apobec)
+  vcf.c.to.t <- vcf.filter[ vcf.filter$V4=="C" & vcf.filter$V5=="T", ]
+  vcf.g.to.a <- vcf.filter[ vcf.filter$V4=="G" & vcf.filter$V5=="A", ]
+  
+  # number of edits we don't care about
+  vcf.a.to.g <- vcf.filter[ vcf.filter$V4=="A" & vcf.filter$V5=="G", ]
+  vcf.a.to.c <- vcf.filter[ vcf.filter$V4=="A" & vcf.filter$V5=="C", ]
+  vcf.a.to.t <- vcf.filter[ vcf.filter$V4=="A" & vcf.filter$V5=="T", ]
+  
+  vcf.t.to.a <- vcf.filter[ vcf.filter$V4=="T" & vcf.filter$V5=="A", ]
+  vcf.t.to.c <- vcf.filter[ vcf.filter$V4=="T" & vcf.filter$V5=="C", ]
+  vcf.t.to.g <- vcf.filter[ vcf.filter$V4=="T" & vcf.filter$V5=="G", ]
+  
+  vcf.c.to.a <- vcf.filter[ vcf.filter$V4=="C" & vcf.filter$V5=="A", ]
+  vcf.c.to.g <- vcf.filter[ vcf.filter$V4=="C" & vcf.filter$V5=="G", ]
+  
+  vcf.g.to.c <- vcf.filter[ vcf.filter$V4=="G" & vcf.filter$V5=="C", ]
+  vcf.g.to.t <- vcf.filter[ vcf.filter$V4=="G" & vcf.filter$V5=="T", ]
+
+  vcf.name <- gsub(".*JAX_0488/", "", vcf.files[i])
+  vcf.name.final <- gsub(".no.header", "", vcf.name)
+  df.vcf <- data.frame(sample = vcf.name.final, 
+                       num.of.snp = nrow(vcf.filter),
+                       
+                       C.to.T = nrow(vcf.c.to.t), 
+                       G.to.A = nrow(vcf.g.to.a), 
+                       
+                       A.to.G = nrow(vcf.a.to.g), 
+                       A.to.C = nrow(vcf.a.to.c), 
+                       A.to.T = nrow(vcf.a.to.t), 
+                       
+                       T.to.A = nrow(vcf.t.to.a), 
+                       T.to.C = nrow(vcf.t.to.c), 
+                       T.to.G = nrow(vcf.t.to.g),
+                       
+                       C.to.A = nrow(vcf.c.to.a), 
+                       C.to.G = nrow(vcf.c.to.g), 
+
+                       G.to.C = nrow(vcf.g.to.c), 
+                       G.to.T = nrow(vcf.g.to.t) )
+  
+  molm.df <- rbind(molm.df, df.vcf)
+  
+}
+
+setwd("~/mount/chuk/RBM15_Dart-Seq/Project_11379_B/Analysis/")
+
+write.csv(molm.df, "MOLM13_align_to_GRCh38_FinalR.vcf_SNPs_called.csv", row.names = FALSE)
+```
+
+Bar plot
+
+```{r bar}
+setwd("~/mount/chuk/RBM15_Dart-Seq/Project_11379_B/Analysis/")
+
+df <- read.csv("FinalR.vcf_SNPs_called.csv")
+
+df$sample <- gsub("_IGO.*", "", df$sample)
+df$group <- ifelse(grepl("B", df$sample), "Apobec", "MIG")
+
+png("Number_of_SNPs_from_Final.vcf_no_known_snps.png", 1000, 800)
+p<-ggplot(data=df, aes(x=sample, y=num.of.snp, fill=group)) +
+  geom_bar(stat="identity") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(plot.title = element_text(size=20)) +
+  theme(axis.text=element_text(size=20, color="black"), axis.title=element_text(size=20, color="black")) +
+  theme(axis.line = element_line(colour = "black", size=1)) +
+  ggtitle("SNPs called from FinalR.vcf (known SNPs removed)") +
+  xlab("")
+print(p)
+dev.off()
+```
+
+Bar plot for each SNP combo
+
+```{r bar combo}
+setwd("~/mount/chuk/RBM15_Dart-Seq/Project_11379_B/Analysis/")
+
+df <- read.csv("FinalR.vcf_SNPs_called.csv")
+df$sample <- gsub("_IGO.*", "", df$sample)
+
+df.subset <- df[,c(1, 3:5, 9)]
+df.subset.melt <- melt(df.subset)
+
+png("Number_of_SNPs_from_Final.vcf_no_known_snps_SNPcombo_barplot.png", 1000, 800)
+p<-ggplot(data=df.subset.melt, aes(x=sample, y=value, fill=variable)) +
+  geom_bar(stat="identity") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(plot.title = element_text(size=20)) +
+  theme(axis.text=element_text(size=20, color="black"), axis.title=element_text(size=20, color="black")) +
+  theme(axis.line = element_line(colour = "black", size=1)) +
+  ggtitle("SNPs called from FinalR.vcf (known SNPs removed)") +
+  xlab("")
+print(p)
+dev.off()
+```
+
+Barplot for each SNP combo for MOLM13
+
+```{r molm}
+setwd("~/mount/chuk/RBM15_Dart-Seq/Project_11379_B/Analysis/")
+
+
+# MOLM13
+molm.df$sample <- gsub(".*MOLM13_align_to_GRCh38/", "", molm.df$sample)
+molm.df$sample <- gsub("_12.*", "", molm.df$sample)
+df.subset <- molm.df[,c(1, 3:5, 9)]
+df.subset.melt <- melt(df.subset)
+
+png("MOLM13_Number_of_SNPs_from_Final.vcf_no_known_snps_SNPcombo_barplot.png", 1000, 800)
+p<-ggplot(data=df.subset.melt, aes(x=sample, y=value, fill=variable)) +
+  geom_bar(stat="identity") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(plot.title = element_text(size=20)) +
+  theme(axis.text=element_text(size=20, color="black"), axis.title=element_text(size=20, color="black")) +
+  theme(axis.line = element_line(colour = "black", size=1)) +
+  ggtitle("MOLM13: SNPs called from FinalR.vcf (known SNPs removed)") +
+  xlab("")
+print(p)
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

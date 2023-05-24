@@ -1,0 +1,226 @@
+---
+title: "Gene expression analysis"
+author: "Karen Chu"
+date: "7/31/2019"
+output: html_document
+---
+
+Gene expression analysis.
+VST normalized counts will change depending on how many genes are in the dataframe.
+
+Cells taken out from the same mouse.
+Add dmso or tamoxefin in vitro and then obtain input or polysome.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries.
+
+```{r libraries}
+library(DESeq2)
+library(data.table)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+library(org.Mm.eg.db)
+library(org.Hs.eg.db)
+library(biomaRt)
+library(ggplot2)
+library("ggrepel")
+library(data.table)
+library(dplyr)
+```
+
+Working directory.
+
+```{r folder}
+folder <- "~/mount3/chuk/Nynrin/HyperTRIBE/Analysis/OCIAML_HyperTRIBE_Analysis/"
+output.dir <-"~/mount3/chuk/Nynrin/HyperTRIBE/Analysis/OCIAML_HyperTRIBE_Analysis/non-trimmed_reads/output/"
+figures.dir <-"~/mount3/chuk/Nynrin/HyperTRIBE/Analysis/OCIAML_HyperTRIBE_Analysis/non-trimmed_reads/figures/"
+```
+
+Import data. Need to be RDS object in order for downstream stuff to work.
+
+```{r data lsc}
+reads <- readRDS("~/mount3/chuk/Nynrin/HyperTRIBE/Project_10932_B_Nynrin_hypertribe/PITT_0483/custom_genome/rnaseq_read_count_feature_counts_custom_genome.rds")
+```
+
+Subset reads.
+
+```{r subset}
+reads.counts <- as.data.frame( reads[[1]] )
+```
+
+Filter.
+
+```{r filter}
+group.one <- "Sample.O.ctrl" # bottom of the log2FC(group.two/group.one)
+group.two <- "Sample.O.ADAR"
+comparison.name <- paste0(group.two, "_vs_", group.one)
+reads.subset <- reads.counts [ ,grepl(paste0(group.one, "|", group.two), colnames(reads.counts))]
+```
+
+Filter out rows with all zeros
+
+```{r filter zeroes}
+zero.index <- apply(reads.subset, 1, function(row) all(row == 0 ))
+reads.subset.filter <- reads.subset[ which(zero.index==FALSE),]
+```
+
+Prepare data for DESeq2. 
+
+```{r prep DESeq2}
+setwd(output.dir)
+
+sample.id <- colnames(reads.subset.filter)
+sample.id <- strsplit(sample.id, "_IGO")
+sample.id <- sapply(sample.id, "[[", 1)
+
+condition <- ifelse(grepl(group.one, colnames(reads.subset.filter)), "Group1", "Group2")
+
+coldata <- data.frame(Sample = as.factor(sample.id), 
+                      condition = as.factor(condition) )
+
+dds <- DESeqDataSetFromMatrix(
+  countData = as.matrix(reads.subset.filter), 
+  colData = coldata, 
+  design = ~condition) 
+
+dds$condition <- relevel(dds$condition, "Group1") # intercept that DESeq2 calculates depends on the first factor. If "LSK" first, then results in log2foldchange(LSC/LSK). If "LSC" first, then results is log2foldchange(LSK/LSC).
+
+write.csv(coldata, paste0("coldata_non-trimmed.reads_custom_genome_", comparison.name, ".csv"), row.names = FALSE)
+write.csv(as.character(design(dds)), paste0("design_non-trimmed.reads_custom_genome_", comparison.name, "_dds.csv"), row.names = FALSE)
+```
+
+Run DESeq2
+
+```{r DESeq2}
+dds <- DESeq(dds)
+dds.vst <- varianceStabilizingTransformation(dds)
+res <- results(dds, name = "condition_Group2_vs_Group1")
+```
+
+Choose below: org.Mm.eg.db for mouse annotation, or org.Hs.eg.db for human.
+
+```{r gene symbol}
+setwd(output.dir)
+
+# Convert Ensembl ID to gene symbol
+library("biomaRt")
+
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+genes <-  as.character(rownames(res))
+genes <- gsub('\\..*', "", genes)
+gene_IDs <- getBM(filters= "ensembl_gene_id", attributes= c("ensembl_gene_id","hgnc_symbol"),
+              values = genes, mart= mart)
+
+reads.filtered.with.genesymbols <- res
+reads.filtered.with.genesymbols$ensembl_gene_id <- genes
+reads.filtered.with.genesymbols.final <- merge( as.data.frame(reads.filtered.with.genesymbols), 
+              gene_IDs, by = 'ensembl_gene_id', all = TRUE )
+final <- reads.filtered.with.genesymbols.final[ match(reads.filtered.with.genesymbols$ensembl_gene_id,
+                                                reads.filtered.with.genesymbols.final$ensembl_gene_id), ]
+rownames(final) <- rownames(reads.filtered.with.genesymbols)
+reads.filtered.with.genesymbols <- final
+
+# dds.vst.with.gene.symbols <- entrezid.to.genesymbol(as.data.frame(assay(dds.vst)))
+# write.csv(dds.vst.with.gene.symbols, paste0("VST_normalized_read_counts_non-trimmed.reads_custom_genome_", comparison.name, ".csv"), row.names = FALSE)
+
+write.csv(as.data.frame(reads.filtered.with.genesymbols), 
+          paste0(output.dir, comparison.name, "_non-trimmed.reads_custom_genome_DESeq2Results.csv"),
+          row.names = TRUE)
+```
+
+PCA.
+
+```{r PCA}
+setwd(figures.dir)
+
+png( paste0( comparison.name, "_non-trimmed.reads_custom_genome_PCA.png"), 1000, 800 )
+pcaData <- plotPCA(dds.vst, intgroup=c("Sample", "condition"), returnData=TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+#ggplot(pcaData, aes(PC1, PC2, color=Sample, shape=cell)) +
+ggplot(pcaData, aes(PC1, PC2, color=condition)) +
+  geom_point(size=15) +
+  geom_label(
+    label=pcaData$Sample, 
+    size = 3,
+    nudge_x = 2, nudge_y = 0 ) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed() +
+  ggtitle(comparison.name) +
+  theme(plot.title = element_text(size=40)) +
+  theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black")) +
+  theme(axis.line = element_line(colour = "black", size=1))
+dev.off()
+```
+
+MA plot.
+
+```{r MA plot}
+setwd(figures.dir)
+
+png( paste0( comparison.name, "_non-trimmed.reads_custom_genome_MA.png" ), 800, 800)
+plotMA(res, ylim=c(-5,5))
+dev.off()
+```
+
+Volcano plot. 
+Gene symbol not there because it's Encode gene symbols.
+
+```{r volcano}
+setwd(figures.dir)
+
+num.name <- group.two
+denom.name <- group.one
+
+padj.thres <- 0.1
+
+res <- reads.filtered.with.genesymbols 
+
+volcano.input <- as.data.frame( res[ order( res$padj, decreasing = F ), ] )
+volcano.input <- mutate(volcano.input, sig=ifelse(volcano.input$padj < padj.thres, "Sig", "Not Sig"))
+
+volcano.input[ volcano.input$ensembl_gene_id=="NYNRIN", ]$hgnc_symbol <- "NYNRIN"
+volcano.input[ volcano.input$ensembl_gene_id=="linker", ]$hgnc_symbol <- "linker"
+volcano.input[ volcano.input$ensembl_gene_id=="ADAR", ]$hgnc_symbol <- "ADAR"
+
+write.csv(volcano.input, paste0(output.dir, 
+                                comparison.name, 
+                                "_non-trimmed.reads_custom_genome_volcano.plot.input.csv"),
+          row.names = FALSE)
+
+png( paste0(comparison.name, "_non-trimmed.reads_custom_genome_volcano.png"), 800, 800 )
+ggplot(data=volcano.input, aes(x=log2FoldChange, y=-log10(pvalue), colour= sig)) + 
+  geom_point(alpha=1, size=4) +
+  theme_minimal() +
+  theme(legend.position="none") +
+  geom_text_repel(data=volcano.input[1:30,], aes(label=hgnc_symbol), size = 5,box.padding = unit(0.5, "lines"), point.padding = unit(0.5, "lines"), color="black") +
+  xlab(paste0("\nlog2(", num.name, "/", denom.name, ")")) + ylab("-log10(p)\n") +
+  ggtitle(paste0(comparison.name, ";\npadj < ", padj.thres, ";\n# of sig genes: ", nrow( subset(volcano.input, sig=="Sig") ), "\n")) +
+  scale_color_manual( values = c( "Sig"='red3', "Not Sig" ='black' ) ) + 
+  theme(plot.title = element_text(size=40)) +
+  theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black")) +
+  theme(axis.line = element_line(colour = "black", size=1))
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

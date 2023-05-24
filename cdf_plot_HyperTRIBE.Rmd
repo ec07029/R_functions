@@ -1,0 +1,116 @@
+---
+title: "CDF plot"
+author: "Karen Chu"
+date: "2/5/2020"
+output: html_document
+---
+
+Plot log2FC of m6a sites vs log2FC of non-m6a sites.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries
+
+```{r lib}
+library(ggplot2)
+library(openxlsx)
+```
+
+Work dir.
+
+```{r work dir}
+figures.dir <- "~/mount/LSC_polysome-seq/Project_12071/DESeq2/CDF_plots/"
+```
+
+Import data
+
+```{r import}
+lsc.hypertribe <- read.xlsx("~/mount/data_resources/mouse_lsc_snp_counts_dedupped_significant.xlsx")
+lsc.hypertribe.filter <- lsc.hypertribe[ lsc.hypertribe$diff.frequency >= 0.1 &
+                                           lsc.hypertribe$p.adj < 0.01 &
+                                           lsc.hypertribe$ADA.fpkm >= 5 &
+                                           lsc.hypertribe$DCD.fpkm >= 5 &
+                                           lsc.hypertribe$MIG.fpkm >= 5, ]
+
+poly.vs.input <- read.csv("~/mount/LSC_polysome-seq/Project_12071/DESeq2/poly_vs_input_interaction_term_without_Sample_3-input_2/poly_vs_input_Poly|input_DESeq2Results.csv")
+
+poly.vs.total <- read.csv("~/mount/LSC_polysome-seq/Project_12071/DESeq2/poly_vs_total_interaction_term_without_Sample_3-input_2/poly_vs_total_Poly|total_DESeq2Results.csv")
+```
+
+Subset for hypertribe
+
+```{r hypertribe}
+hypertribe.targets <- unique(lsc.hypertribe.filter$entrez.id)
+```
+
+Plot cdf
+
+```{r cdf}
+setwd(figures.dir)
+
+# df1 = list of genes with methyl sites
+# df2 = rna-seq gene list
+plot.cdf <- function(hypertribe.sig.targets, rna.seq.full.data, title) {
+  
+  # Get list of methylated and non-methylated genes
+  targets <- rna.seq.full.data [ rna.seq.full.data$entrez.id %in% hypertribe.sig.targets, ]$log2FoldChange
+  non.targets <- rna.seq.full.data [ !(rna.seq.full.data$entrez.id %in% hypertribe.sig.targets), ]$log2FoldChange
+  
+  # Convert to dataframe, class object required for ggplot
+  target.input <- data.frame( log2FC = targets, status = "HyperTRIBE.target")
+  non.target.input <- data.frame( log2FC = non.targets, status = "not.target")
+  cdf.input <- rbind(target.input, non.target.input)
+  cdf.input <- cdf.input [ !(is.na(cdf.input$log2FC)), ]
+  
+  # K-S test
+  # alternative = greater when we hypothesize that the second distribution is greater than the first
+  ks.res <- ks.test( target.input$log2FC, non.target.input$log2FC, alternative = "greater")
+  
+  # Plot CDF
+  png(paste0(title, "_CDF.png"), 600, 600)
+  p <- ggplot(cdf.input, aes(log2FC, colour = status)) + stat_ecdf(size=1) +
+    ggtitle(paste0(title, "\np-value: ", signif(ks.res$p.value, digits = 3), "\n")) +
+    xlab("\nlog2FC(KO/WT)") +
+    ylab("CDF\n") +
+    xlim(-2,2) +
+    theme_minimal() +
+    theme(panel.border = element_rect(colour = "black", fill=NA, size=2)) +
+    theme(plot.title = element_text(size=20)) +
+    theme(axis.text=element_text(size=20, color="black"), axis.title=element_text(size=20, color="black"))
+  print(p)
+  dev.off()
+  
+  # Plot boxplot
+  png(paste0(title, "_boxplot.png"), 500, 800)
+  p<-ggplot(cdf.input, aes(x=status, y=log2FC, fill=status)) +
+    geom_boxplot(lwd=1.5) +
+    ggtitle(paste0(title, "\n")) +
+    theme_classic() +
+    theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+    theme(panel.border = element_rect(colour = "black", fill=NA, size=2)) +
+    theme(plot.title = element_text(size=40)) +
+    theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black"))
+  print(p)
+  dev.off()
+
+}
+
+plot.cdf( hypertribe.targets, poly.vs.input, "Poly.vs.Input_LSC_HyperTRIBE" )
+plot.cdf( hypertribe.targets, poly.vs.total, "Poly.vs.Total_LSC_HyperTRIBE" )
+```
+
+
+
+
+
+
+
+
+
+
+
+

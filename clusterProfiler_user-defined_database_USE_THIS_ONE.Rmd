@@ -1,0 +1,323 @@
+---
+title: "clusterProfiler specific functions"
+author: "Karen Chu"
+date: "11/21/2019"
+output: html_document
+---
+
+Download txt database from EnrichR website: https://maayanlab.cloud/Enrichr/#libraries
+All input genes must be CAPITALIZED
+
+Reference code located here:
+https://www.sciencedirect.com/science/article/pii/S2666675821000667
+
+Manipulating enrichResult object:
+https://yulab-smu.top/biomedical-knowledge-mining-book/clusterProfiler-dplyr.html
+
+Libraries
+
+```{r lib}
+library(clusterProfiler)
+library(DESeq2)
+library(enrichplot)
+library(org.Mm.eg.db)
+library(ggplot2)
+library(reshape2)
+```
+
+Dir
+
+```{r dir}
+output.dir <- "~/mount/Msi2-KO_mouse/2021_08_DESeq2_analysis/clusterProfiler/"
+```
+
+Import data
+
+```{r import}
+df.list <- Sys.glob("~/mount/Msi2-KO_mouse/2021_08_DESeq2_analysis/*/*DESeq2Results.csv")
+df <- lapply(df.list, read.csv)
+names(df) <- df.list
+
+# Filter by p-adj < 0.01
+lt <- df[[ which(grepl("LT", names(df))) ]]
+st <- df[[ which(grepl("ST", names(df))) ]]
+mpp2 <- df[[ which(grepl("MPP2", names(df))) ]]
+mpp4 <- df[[ which(grepl("MPP4", names(df))) ]]
+
+filter.df <- function(df) {
+  
+  df.up <- df[ df$padj < 0.01 & df$log2FoldChange >= 1, ]
+  df.down <- df[ df$padj < 0.01 & df$log2FoldChange <= -1, ]
+  df.final <- rbind(df.up, df.down)
+  
+  df.final$gene <- as.character(df.final$gene)
+  
+  return(df.final)
+  
+}
+
+lt.filter <- filter.df(lt)
+st.filter <- filter.df(st)
+mpp2.filter <- filter.df(mpp2)
+mpp4.filter <- filter.df(mpp4)
+
+# Combine LT, ST and MPP2,MPP4
+lt.st <- unique(c(lt.filter$gene, st.filter$gene))
+mpp2.mpp4 <- unique(c(mpp2.filter$gene, mpp4.filter$gene))
+
+# Capitalize
+lt.st <- toupper(lt.st)
+mpp2.mpp4 <- toupper(mpp2.mpp4)
+```
+
+Run EnrichR
+
+```{r enricher}
+encode <- read.gmt("~/Downloads/RNA-Seq_Disease_Gene_and_Drug_Signatures_from_GEO.txt")
+reads <- readRDS("~/mount/Msi2-KO_mouse/rnaseq_read_count_entrez_id.rds")
+
+# set up background (all genes expressed)
+fpkm.mat <- fpkm( DESeqDataSet( reads, ~1 ) )
+fpkm.greater.equal.to.one <- which( rowMeans(fpkm.mat) >= 1 )
+reads.filtered <- reads [ rownames(reads) %in% names(fpkm.greater.equal.to.one), ]
+reads.filtered.df <- as.data.frame(assay(reads.filtered))
+
+# entrez.id to gene symbols
+# cannot work if dplyr is loaded
+library(org.Mm.eg.db)
+hs <- org.Mm.eg.db
+entrez.id.to.gene.symbol <- function(gene.list) {
+  
+  entrez.id <- select(hs, 
+                      keys = gene.list,
+                      columns = c("ENTREZID", "SYMBOL"),
+                      keytype = "ENTREZID")
+  
+  return(entrez.id)
+  
+}
+background <- entrez.id.to.gene.symbol(rownames(reads.filtered.df))
+background.symbol <- toupper(background$SYMBOL)
+
+# clusterProfiler
+enrichr.res <- enricher(lt.st, TERM2GENE=encode, universe=background.symbol)
+enrichr.res.mpp <- enricher(mpp2.mpp4, TERM2GENE=encode, universe=background.symbol)
+```
+
+Write output
+
+```{r output}
+setwd(output.dir)
+
+write.csv(enrichr.res, "LT.ST_clusterProfiler_output.csv", row.names = FALSE)
+write.csv(enrichr.res.mpp, "MPP2.MPP4_clusterProfiler_output.csv", row.names = FALSE)
+```
+
+
+Subset for signatures of interest from Nature Comms.
+Results show LT.ST DE genes are enriched for "MSI2 Hematopoietic Stem Overexpression GSE70685 down".
+
+```{r subset}
+pattern.name <- c("Tet1.*LT.*GSE65955.*down",
+                  "MSI2.*GSE70685.*down",
+                  "Msi2.*LSCs.*Knockout.*GSE64545.*up",
+                  "Myelodysplastic.*Hematopoietic.*Stem.*Cells.*GSE55689.*down",
+                  "Myelodysplastic.*Megakaryotype.*Erythroid.*Progenitor.*GSE55689.*up",
+                  "Meis1.*Jmjd1c1.*Hoxa9.*Bone.*marrow.*cells.*GSE75581.*down",
+                  "Tet1.*Bone.*Marrow.*MPP.*Knockout.*GSE65955.*down",
+                  "IFNg.*bone_marrow.*macrophages.*GSE77885.*up",
+                  "YY1.*Bone.*marrow.*B.*cells.*Knockout.*GSE73534.*down",
+                  "Irf4.*CD8+.*T.*cells.*knockout.*GSE49929.*down",
+                  "FancC.*B_cells.*Knockout.*GSE76634.*down",
+                  "Notch1.*T.*lymphocyte.*GSE66147.*down",
+                  "IL.*Macrophages.*GSE49449.*down",
+                  "PTP1B.*Macrophages.*Knockout.*GSE49449.*down",
+                  "CNS2.*Treg.*GSE57272.*up")
+
+enrichr.res.subset <- enrichr.res[ grepl(paste(pattern.name, collapse="|"),
+                                         enrichr.res$ID), ]
+enrichr.res.subset.mpp <- enrichr.res[ grepl(paste(pattern.name, collapse="|"),
+                                         enrichr.res.mpp$ID), ]
+```
+
+There are 53 Terms that are enriched. Subset for signatures that are interest in general.
+
+Jmjd1c Bone marrow cells GSE75579 down
+UTX Bone marrow Knockout GSE56690 up
+N-acetylcysteine K-RAS-induced lung tumor GSE52594 down
+NHD13 Myelodysplastic syndrome stem cells Overexpression GSE76840 up
+Utx Spleen Knockout GSE64969 down
+Mef2c/d proB-cells knockout GSE73561 up
+ALS IPSCs-derived neurons GSE52202 down
+MSI2 Hematopoietic Stem Overexpression GSE70685 down
+KDM2B HSPCs Knockout GSE70728 down
+Runx1 Bone marrow Deficiency GSE67609 up
+
+```{r subset}
+
+```
+
+
+
+
+
+PLOTS
+
+barplot() details: https://rdrr.io/r/graphics/barplot.html
+Visualization details: https://yulab-smu.top/biomedical-knowledge-mining-book/enrichplot.html
+
+```{r barplot}
+setwd(output.dir)
+
+# Barplot
+png("clusterprofiler_LT.ST_RNA-Seq_Disease_Gene_and_Drug_Signatures.png", 1000, 700)
+p <- barplot(enrichr.res, showCategory=50, x="Count", main="LT.ST\np-adj < 0.01 & log2FC >= |1|\nx-axis=Count") 
+print(p)
+dev.off()
+
+png("clusterprofiler_MPP2.MPP4_RNA-Seq_Disease_Gene_and_Drug_Signatures.png", 1000, 700)
+p <- barplot(enrichr.res.mpp, showCategory=50, x="Count", main="MPP2.MPP4\np-adj < 0.01 & log2FC >= |1|\nx-axis=Count") 
+print(p)
+dev.off()
+```
+
+Barplot of interested LT.ST signatures
+
+#```{r barplot2}
+# LT.ST signatures of interest
+pattern.name <- c("GSE75579", "GSE56690", "GSE52594", "GSE76840", "GSE64969",
+                  "GSE73561", "GSE52202", "GSE70685", "GSE70728", "GSE67609")
+
+# Subset for signatures of interest in LT.ST and make those signatures match with MPP
+enrichr.res.subset <- enrichr.res[ grepl(paste(pattern.name, collapse="|"),
+                                         enrichr.res$ID)]
+enrichr.res.mpp.subset <- enrichr.res.mpp[ grepl(paste(pattern.name, collapse="|"),
+                                         enrichr.res.mpp$ID)]
+
+# Prepare plot input
+colnames(enrichr.res.subset)[2:9] <- paste0(colnames(enrichr.res.subset)[2:9], "_LT.ST")
+colnames(enrichr.res.mpp.subset)[2:9] <- paste0(colnames(enrichr.res.mpp.subset)[2:9], "_MPP2.MPP4")
+plot.input <- merge(enrichr.res.subset, enrichr.res.mpp.subset, by="ID")
+plot.input.select <- plot.input %>% select(c("ID",
+                                             "Count_LT.ST", "Count_MPP2.MPP4"))
+plot.input.select.melt <- melt(plot.input.select)
+plot.input.select.melt$variable <- factor(plot.input.select.melt$variable,
+                               levels=c("Count_MPP2.MPP4", "Count_LT.ST"))
+plot.input.select.melt.final <- merge( plot.input %>% select(c("ID", "p.adjust_LT.ST", "p.adjust_MPP2.MPP4")),
+                                       plot.input.select.melt, by="ID")
+# Put MPP2 p-adjust in the even rows
+even.index <- seq(2,nrow(plot.input.select.melt.final),2)
+plot.input.select.melt.final$p.adjust_LT.ST[even.index] <- plot.input.select.melt.final$p.adjust_MPP2.MPP4[even.index]
+plot.input.select.melt.final <- plot.input.select.melt.final %>% select(c(-"p.adjust_MPP2.MPP4"))
+colnames(plot.input.select.melt.final)[2] <- "p.adjust"
+
+# Barplot interesting signatures only
+png("clusterprofiler_RNA-Seq_Disease_Gene_and_Drug_Signatures_LT.ST_interesting_signatures.png", 1000, 700)
+p <- ggplot(data=plot.input.select.melt.final, aes(x=ID, y=value, group=variable, fill=variable)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  coord_flip() +
+  ggtitle( paste0(output.dir, "\nLT & ST combined and run on Enrichr. Repeat for combine MPP2,MPP4") ) +
+  xlab("\nCount") +
+  scale_fill_manual("legend", values = c("Count_LT.ST" = "black", "Count_MPP2.MPP4" = "blue")) +
+  theme_minimal() +
+  theme(plot.title = element_text(size=12)) +
+  theme(axis.text=element_text(size=15, color="black"), axis.title=element_text(size=20, color="black")) +
+  theme(axis.line = element_line(colour = "black", size=1))
+print(p)
+dev.off()
+#```
+
+Barplot of interested signatures
+
+```{r barplot2}
+library(dplyr)
+
+# LT.ST signatures of interest
+pattern.name <- c("GSE75579", "GSE56690", "GSE76840", "GSE64969",
+                  "GSE73561", "GSE52202", "GSE70685", "GSE70728", "GSE67609",
+                  "Tet1", "Bone", "bone", "HSC", "MPP", 
+                  "Hematopoietic", "myeloid", "leukemia", "LSC")
+
+# Subset for signatures of interest in LT.ST and make those signatures match with MPP
+enrichr.res.subset <- enrichr.res[ grep(paste(pattern.name, collapse="|"),
+                                         enrichr.res$ID)]
+enrichr.res.mpp.subset <- enrichr.res.mpp[ grep(paste(pattern.name, collapse="|"),
+                                         enrichr.res.mpp$ID)]
+
+# Prepare plot input
+colnames(enrichr.res.subset)[2:9] <- paste0(colnames(enrichr.res.subset)[2:9], "_LT.ST")
+colnames(enrichr.res.mpp.subset)[2:9] <- paste0(colnames(enrichr.res.mpp.subset)[2:9], "_MPP2.MPP4")
+plot.input <- merge(enrichr.res.subset, enrichr.res.mpp.subset, by="ID", all=T)
+
+write.csv(plot.input, "plot.input_interesting_signtures.csv", row.names = FALSE)
+
+plot.input.select <- plot.input %>% select(c("ID",
+                                             "Count_LT.ST", "Count_MPP2.MPP4"))
+plot.input.select.melt <- melt(plot.input.select)
+plot.input.select.melt$variable <- factor(plot.input.select.melt$variable,
+                               levels=c("Count_MPP2.MPP4", "Count_LT.ST"))
+plot.input.select.melt.final <- merge( plot.input %>% select(c("ID", "p.adjust_LT.ST", "p.adjust_MPP2.MPP4")),
+                                       plot.input.select.melt, by="ID", all=T)
+# Put MPP2 p-adjust in the even rows
+even.index <- seq(2,nrow(plot.input.select.melt.final),2)
+plot.input.select.melt.final$p.adjust_LT.ST[even.index] <- plot.input.select.melt.final$p.adjust_MPP2.MPP4[even.index]
+plot.input.select.melt.final <- plot.input.select.melt.final %>% select(c(-"p.adjust_MPP2.MPP4"))
+colnames(plot.input.select.melt.final)[2] <- "p.adjust"
+
+# Set row order in plot
+plot.input.select.melt.final <- plot.input.select.melt.final[ order(plot.input.select.melt.final$p.adjust),]
+plot.input.select.melt.final$ID <- factor(plot.input.select.melt.final$ID, 
+                                          levels = rev(unique(plot.input.select.melt.final$ID)))
+
+# Barplot interesting signatures only
+png("clusterprofiler_RNA-Seq_Disease_Gene_and_Drug_Signatures_interesting_signatures.png", 1200, 700)
+p <- ggplot(data=plot.input.select.melt.final, aes(x=ID, y=value, group=variable, fill=variable)) +
+  geom_bar(stat="identity", position=position_dodge(), width=0.7) +
+  coord_flip() +
+  ggtitle( paste0(output.dir, "\nLT & ST combined and run on Enrichr. Repeat for combine MPP2,MPP4") ) +
+  ylab("\nCount") + xlab("") +
+  scale_fill_manual("legend", values = c("Count_LT.ST" = "black", "Count_MPP2.MPP4" = "blue")) +
+  theme_minimal() +
+  theme(plot.title = element_text(size=12)) +
+  theme(axis.text=element_text(size=12, color="black"), axis.title=element_text(size=20, color="black")) +
+  theme(axis.line = element_line(colour = "black", size=1))
+print(p)
+dev.off()
+```
+
+Network
+
+```{r network}
+setwd(output.dir)
+
+# Network
+
+## convert gene ID to Symbol
+edox <- setReadable(edo, 'org.Hs.eg.db', 'ENTREZID')
+
+p1 <- cnetplot(enrichr.res, foldChange=geneList)
+```
+
+
+#```{r enrichr run}
+setwd(folder)
+# Run Enrichr on RNA-seq and gene signature
+# targets <- dl.enrichr.input [ grepl("MSI2", dl.enrichr.input$ont), ]$gene # positive control for code
+background <- unique( as.character( rownames(reads.mat) ) ) # All data
+targets <- unique( c (as.character(lt.yuheng.filter$entrez.id),
+                      as.character(st.yuheng.filter$entrez.id) ))
+egmt <- enricher( targets, 
+                  universe = background,
+                  pAdjustMethod = "BH",
+                  TERM2GENE=dl.enrichr.input.filter)
+
+png("enrichr_output/RNA-Seq_Disease_Gene_and_Drug_Signatures_from_GEO_plot_LT_ST.png", 1200, 800)
+enrichplot::dotplot(egmt, x="Count", showCategory=length(egmt$Description))
+dev.off()
+
+egmt.hsc <- as.data.frame(egmt)
+#```
+
+
+
+
