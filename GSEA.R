@@ -1,3 +1,5 @@
+# author: "K Chu"
+
 library(fgsea)
 setwd("~/Desktop")
 examplePathways <- read.table("lsc_ADAR_DMSO|ADAR_Ro_DESeq2Results_log2FC_lessthan-1.5_padj_lessthan_0.01_decreasing_log2FC_order_gene_list.grp")
