@@ -1,3 +1,5 @@
+# author: "K Chu"
+
 # Library
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(BSgenome.Hsapiens.UCSC.hg19)
