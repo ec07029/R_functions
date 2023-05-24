@@ -1,6 +1,6 @@
 ---
 title: "Gene expression analysis"
-author: "Karen Chu"
+author: "K Chu"
 date: "7/31/2019"
 output: html_document
 ---
