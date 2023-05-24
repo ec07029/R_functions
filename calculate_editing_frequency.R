@@ -1,3 +1,5 @@
+# author: "K Chu"
+
 library(dplyr)
 
 setwd("/Users/chuk/Documents/Syncrip/distance to nearest motif/data/")
